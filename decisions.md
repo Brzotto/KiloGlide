@@ -26,34 +26,34 @@ Strategic implication: the box is not the product. The dataset and the algorithm
 
 ## Approach: breadboard first, PCB second
 
-**Decision:** validate the design on breadboard before committing to PCB.
+**Decision:** validate the design on breadboard/perfboard before committing to PCB.
 
-**Why this changed:** initial preference was PCB-first to avoid messy wiring on the boat. Reasonable from an aesthetics/reliability angle, but the deeper reason for breadboard-first is that there are too many unknowns that only get answered by running real hardware: LCD timing quirks, current draw under load, GPS first-fix performance in local conditions, IMU bus sharing behavior, mounting position effects on signal quality. Discovering these on a $50 PCB means a respin; discovering them on a breadboard means a wire change.
+**Why this changed:** initial preference was PCB-first to avoid messy wiring on the boat. Reasonable from an aesthetics/reliability angle, but the deeper reason for breadboard-first is that there are too many unknowns that only get answered by running real hardware: LCD timing quirks, current draw under load, GPS first-fix performance in local conditions, IMU bus sharing behavior, mounting position effects on signal quality. Discovering these on a $50 PCB means a respin; discovering them on a perfboard means a wire change.
 
-**Mitigation for the "wires in a boat" concern:** the breadboard never goes near the water in v0. Algorithm development happens at the bench. Once the design is proven, the v1 PCB is built with confidence.
+**Mitigation for the "wires in a boat" concern:** the breadboard never goes near the water in v0. Algorithm development happens at the bench. The perfboard prototype goes in a sealed Pelican case for water testing. Once the design is proven, the v1 PCB is built with confidence.
 
-**Hardware continuity rule:** every chip used on the breadboard is the same chip that goes onto v1 PCB. Only the form factor changes (DevKit → bare module, breakout → bare IC). This means firmware doesn't change between stages.
+**Hardware continuity rule:** chips used on the perfboard should ideally be the same chips that go onto v1 PCB, or close equivalents with matching libraries.
 
 ---
 
-## Hardware selections (locked in for v0/breadboard)
+## Hardware selections (locked in for v0/perfboard prototype)
 
-| Function | Chip | Breadboard form | PCB form |
+| Function | Chip | Prototype form (v0) | PCB form (v1) |
 |---|---|---|---|
 | MCU | ESP32-S3 | DevKitC-1 N8R8 | WROOM-1 module |
-| IMU | ICM-42688-P | LogicalEdges Tindie breakout | bare LGA |
-| GPS | u-blox MAX-M10S | SparkFun breakout | bare LCC module |
-| Display | Sharp LS027B7DH01 | Adafruit 2.7" breakout | bare panel + driver |
+| IMU | LSM6DSOX | Adafruit breakout | bare LGA (ICM-42688-P) |
+| GPS | u-blox SAM-M10Q | SparkFun Qwiic breakout | bare LCC module |
+| Display | Sharp LS027B7DH01A | Kuzyatech A2 (w/ boost) | bare panel + driver |
 | Storage | microSD | Adafruit breakout | Hirose DM3AT socket |
-| Charging | TP4056 | Amazon module | bare IC + USB-C + protection |
+| Charging | bq25185 | Adafruit module (w/ boost)| bare IC + USB-C + protection |
 
 **ESP32-S3 over alternatives:** picked for built-in BLE 5.0 (Garmin sync path), Wi-Fi (later phone sync), enough GPIOs for everything, and abundant Arduino/ESP-IDF library support. Modular FCC certification on WROOM-1 carries through to product PCB, saving cert costs later.
 
-**ICM-42688-P over alternatives:** industry-leading noise floor for the price, ±2g to ±16g configurable accelerometer range (handles both light dragon-boat hull responses and sharp OC1 sprints), 6-axis is sufficient for now. Magnetometer (9-axis) skipped for v1 — see GPS heading note below.
+**LSM6DSOX (v0) vs ICM-42688-P (v1):** The prototype is using the LSM6DSOX via Adafruit for ease of prototyping and library support. The production PCB will swap to the ICM-42688-P for its industry-leading noise floor for the price.
 
-**MAX-M10S over alternatives:** quad-constellation (GPS + GLONASS + Galileo + BeiDou) on a single die, very low power (~25 mW continuous), small footprint, well-supported by SparkFun u-blox library. Lifecycle status to verify with u-blox before PCB v1 commit; MAX-M10M-00B noted as a footprint-compatible backup.
+**SAM-M10Q over alternatives:** Used for the v0 prototype specifically because it features a built-in patch antenna, eliminating the need for an external antenna inside the tight Pelican case enclosure. It remains low power and quad-constellation.
 
-**Sharp Memory LCD:** sunlight-readable without backlight, low power, slow refresh is fine for paddling display. Viewing angle and dawn/dusk readability flagged for verification before PCB v1.
+**Sharp Memory LCD:** sunlight-readable without backlight, low power, slow refresh is fine for paddling display. The v0 prototype requires the Kuzyatech breakout *with boost* to step up the 3.3V LiPo power to the 5V required by the panel.
 
 ---
 
@@ -61,43 +61,41 @@ Strategic implication: the box is not the product. The dataset and the algorithm
 
 These are corrections from a critique that caught real errors:
 
-**Power regulation: AMS1117 is OUT for v1 PCB.** AMS1117 has ~1V dropout, which means it can't regulate cleanly to 3.3V once the LiPo sags below ~4.3V. A LiPo spends most of its discharge between 3.7V and 3.5V. AMS1117 would either fail or pass through unregulated voltage during normal use. Replacement: TPS63020 buck-boost (or similar) that produces stable 3.3V from 2.5–5.5V input at ~95% efficiency, gets the full LiPo discharge curve. Adds ~$3 to the PCB BOM but removes a real functional risk. For breadboard, the DevKit's onboard regulator is fine.
+**Power regulation: AMS1117 is OUT for v1 PCB.** AMS1117 has ~1V dropout, which means it can't regulate cleanly to 3.3V once the LiPo sags below ~4.3V. A LiPo spends most of its discharge between 3.7V and 3.5V. Replacement: TPS63020 buck-boost (or similar) that produces stable 3.3V from 2.5–5.5V input at ~95% efficiency. For the perfboard, the DevKit's onboard regulator and the bq25185 charger module handle power.
 
-**Pelican 1010 is polycarbonate, NOT polypropylene.** Earlier mounting plan called for flame-treating the case to improve VHB adhesion. That's a recipe for polyolefins. PC bonds well with VHB after just an isopropyl wipe. Skip the flame treatment.
+**Pelican 1010 is polycarbonate, NOT polypropylene.** Earlier mounting plan called for flame-treating the case to improve VHB adhesion. PC bonds well with VHB after just an isopropyl wipe. Skip the flame treatment.
 
 **Pelican already has a pressure equalization vent** (ePTFE membrane, factory-installed). Do not drill additional vents. Do not add a separate Gore patch. Don't compromise the IP67 rating.
 
-**"Power" language dropped from metric vocabulary.** Calling boat acceleration × mass "power per stroke" is technically defensible as an impulse proxy, but borrows the credibility that cycling/rowing have earned through ergometer-validated power meters. Athletes who've trained with real power meters will notice. Better terminology: stroke impulse, boat response, effective drive, acceleration contribution, corrected DPS. Save "power" for if/when there's ergometer-validated calibration data to back it up.
+**"Power" language dropped from metric vocabulary.** Calling boat acceleration × mass "power per stroke" is technically defensible as an impulse proxy, but borrows the credibility that cycling/rowing have earned through ergometer-validated power meters. Better terminology: stroke impulse, boat response, effective drive, acceleration contribution, corrected DPS.
 
-**True Stroke Power demoted from headline metric to offline analysis** for v1. The risk of shipping a beautiful but unvalidated number where athletes train against misleading feedback for a season is real. v1 displays the known-good metrics (speed, split, rate, time, GPS quality, battery) only. Raw IMU + GPS log at full rate to SD card. TSP development happens in Python against logged data. Display it on-device only after correlation with something real has been demonstrated across many sessions.
+**True Stroke Power demoted from headline metric to offline analysis** for v1. The risk of shipping a beautiful but unvalidated number where athletes train against misleading feedback for a season is real. v1 displays the known-good metrics only. Raw IMU + GPS log at full rate to SD card. TSP development happens in Python against logged data.
 
 ---
 
 ## Mounting approach
 
-**Case: Pelican 1010 micro case** (interior 111 × 73 × 43 mm, IP67, polycarbonate, ePTFE vent built in). Used both for v0 breadboard testing and as a candidate v1 production case.
+**Case: Pelican 1010 micro case** (interior 111 × 73 × 43 mm, IP67, polycarbonate, ePTFE vent built in). Used both for v0 perfboard testing and as a candidate v1 production case.
 
-**NK SpeedCoach mount compatibility.** NK sells the bracket (female receiver) but not the male dovetail backplate as a standalone accessory; the dovetail is molded into the SpeedCoach housing. Strategy: buy the NK adjustable surface mount (~$25 from nksports.com) and 3D-print the male dovetail using calipers off a friend's SpeedCoach. Print in PETG/ABS, mechanically fasten to a backing plate, VHB the backing plate to the Pelican (PC + IPA wipe + VHB 5952). Backing plate approach allows replacing the mount style without destroying the case.
+**NK SpeedCoach mount compatibility.** Strategy: buy the NK adjustable surface mount (~$25 from nksports.com) and 3D-print the male dovetail. Print in PETG/ABS, mechanically fasten to a backing plate, VHB the backing plate to the Pelican (PC + IPA wipe + VHB 5952).
 
-**Latch orientation matters.** The Pelican's latch is on the long edge. Mount orientation must put the latch upward or athwartship, not down against the hull, or the case can't be opened without unmounting.
+**Latch orientation matters.** The Pelican's latch is on the long edge. Mount orientation must put the latch upward or athwartship, not down against the hull.
 
-**Buttons accessed by opening case** (v0 decision). USB-C also only accessible when case is open. Fully sealed during use, opened to charge or interact. Acceptable trade-off for v1; revisit for production.
+**Buttons accessed by opening case** (v0 decision). Fully sealed during use, opened to charge or interact. Acceptable trade-off for v1; revisit for production.
 
 ---
 
 ## Form factor and depth budget
 
-PCB usable footprint inside Pelican 1010: ~89 × 61 mm with margins for foam, cables, and clearance. Hard cap around 102 × 66 mm. Smaller is fine and cheaper at OSHPark.
+**Perfboard fit:** The Adafruit Perma-Proto Half-Size (82x53mm) comfortably fits the 111x73mm interior of the Pelican 1010.
 
-**Depth is tighter than area.** 43 mm interior must fit: LCD (6 mm) + LCD-to-PCB clearance (4 mm) + PCB (1.6 mm) + tallest component (3 mm) + battery (~6 mm with 1500–2000 mAh pouch) + foam. Battery pouch thickness is the swing variable. 1200–2000 mAh range is the right target — not a 3000 mAh, despite the original BOM specifying it.
-
-**OSHPark cost** at $5/sq-in for 3-board panels: ~$36–55 for realistic v1 board sizes. Not the $20 originally written in the BOM.
+**Depth is tighter than area.** 43 mm interior must fit the entire stack. Current v0 estimations place the depth at ~34mm, leaving enough clearance so nothing is crushed. Battery size is 2000mAh, deferred until initial bench testing is complete. 
 
 ---
 
 ## Algorithm-first prioritization
 
-The hardest part of this project is not hardware. It's algorithms: stroke detection that works across paddlers, boats, mounting positions, and water conditions; mount-orientation calibration; distinguishing strokes from wave events; environment-corrected metrics. Hardware will work. The question is whether the metrics it produces are trustworthy.
+The hardest part of this project is not hardware. It's algorithms. Hardware will work. The question is whether the metrics it produces are trustworthy.
 
 **Plan:** v0 firmware logs raw IMU at 100–200 Hz and GPS at 5 Hz to SD card. No on-device metric computation beyond what's needed for the live display (speed, rate, time, status). Algorithms developed in Python against logged sessions, then ported to firmware once validated.
 
@@ -110,51 +108,43 @@ The hardest part of this project is not hardware. It's algorithms: stroke detect
 5. Same paddler/crew, same effort, same conditions → repeatable metrics
 6. Corrected DPS metric is more stable across wind/current/chop than raw DPS
 
-Until these are true, this is a cool electronics project. Once they're true, it becomes a product.
-
 ---
 
 ## Use-case priorities
 
 Three distinct profiles, same hardware, different firmware modes selectable at startup:
 
-**OC mode (primary v1).** Single paddler, narrow hull, large roll signal, glide-dominant performance lever. Primary metrics: speed, split, stroke rate, glide quality, roll, corrected DPS (offline initially).
+**OC mode (primary v1).** Single paddler, narrow hull, large roll signal, glide-dominant performance lever. 
 
-**Dragon Boat mode (v1.5).** Wide hull, low roll, large mass, lateral sync as the dominant signal. Primary metrics: collective stroke rate, sync score, drum tempo (if MEMS mic added later), boat response per stroke. Coach gets full data; crew sees collective metrics only — frame as "what the boat is telling us," not surveillance.
+**Dragon Boat mode (v1.5).** Wide hull, low roll, large mass, lateral sync as the dominant signal. 
 
-**Surf mode (v2).** Downwind / ocean swell riding in OC. Different metrics entirely: catch success rate, catch latency, ride duration, top wave speed, linking rate, time above cruise speed. This is the use case that *most differentiates* Kikaha Coach from SpeedCoach — SpeedCoach is bad for surfing because speed/cadence don't tell you about catch quality. The Hawaii / Maui / Pacific NW downwind communities are exactly the niche-passionate market that buys high-end paddle gear. Surf mode might be the most distinctive marketable application of the whole project, even though OC flat-water is the entry point.
+**Surf mode (v2).** Downwind / ocean swell riding in OC. Different metrics entirely: catch success rate, catch latency, ride duration, top wave speed. This is the use case that *most differentiates* Kikaha Coach from SpeedCoach.
 
 ---
 
 ## Business model thinking (early, not committed)
 
-**Customer is probably not the individual paddler — it's the coach, club, or program.** Dragon boat clubs in particular have budgets that recreational paddlers don't. A $400–500 device sold to a club for crew analytics is easier than 20 × $30 wearables sold to individuals. The coach pitch is: one boat unit + analytics platform, sold as a coaching tool, not a fitness gadget.
+**Customer is probably not the individual paddler — it's the coach, club, or program.** A $400–500 device sold to a club for crew analytics is easier than 20 × $30 wearables sold to individuals. 
 
-**Patent strategy: defer.** Individual components are not patentable (prior art everywhere). Specific combinations and the lineup-optimization angle may be. At this stage, trade secrets + first-mover trust + open-sourcing hardware while keeping analytics proprietary is the right model. Patents cost $10–15K and years; not the current bottleneck.
+**Patent strategy: defer.** Trade secrets + first-mover trust + open-sourcing hardware while keeping analytics proprietary is the right model currently.
 
 ---
 
 ## What's next (immediate)
 
-1. Order all breadboard parts (~$165: SparkFun, Adafruit, Tindie, Amazon, DigiKey)
-2. Order Pelican 1010 (Amazon) and NK adjustable surface mount (nksports.com)
-3. Set up Arduino IDE with ESP32 board package + required libraries
-4. Set up Python environment for offline data analysis
-5. Send Josh the pitch message — don't wait for hardware to be working
-6. Take photos and write entries here as decisions get made
+1. Order ESP32 DevKit, IMU, and perfboard FIRST to start coding.
+2. Order remaining BOM items.
+3. Order Pelican 1010 (Amazon) and NK adjustable surface mount (nksports.com)
+4. Set up Arduino IDE with ESP32 board package + required libraries
+5. Set up Python environment for offline data analysis
+6. Send Josh the pitch message — don't wait for hardware to be working
 
 ---
 
 ## Open questions to resolve before PCB v1
 
-- MAX-M10S lifecycle status — verify with u-blox directly
-- Sharp Memory LCD viewing angle from paddler's seated position — verify with breadboard mounted in case
-- Real current draw under load — measure once breadboard is running
+- MAX-M10S lifecycle status (if reverting from SAM-M10Q for production)
+- Sharp Memory LCD viewing angle from paddler's seated position
+- Real current draw under load — measure once perfboard is running
 - Stroke detection algorithm validation across paddlers — needs water data
-- Whether to put USB-C externally accessible (compromises seal) or only when case is open (current plan)
 - Mount calibration UX — how does the paddler tell the device "now I'm aligned with the boat"
-- Whether to add a magnetometer for heading on v2 (skipped v1; revisit if heading-dependent metrics turn out to matter)
-
----
-
-*First entry: project named, approach committed, parts list locked. From here, every decision, mistake, surprise, and water test gets a new entry above this one.*
