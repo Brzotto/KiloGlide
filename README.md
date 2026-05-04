@@ -7,7 +7,7 @@ traditional navigators used to read the stars, the sea, and the wind.
 KiloGlide observes your glide and tells you, with discipline, what it sees.
 
 ESP32-S3 + LSM6DSOX IMU + u-blox GPS + Sharp memory LCD,
-in a Pelican 1010 case.
+in a 3D printed enclosure designed by Marshall
 
 ## Status
 
