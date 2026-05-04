@@ -1,6 +1,10 @@
-# Kikaha Coach — Data Insights & Strategic Notes
+# KiloGlide — Data Insights & Strategic Notes
 
 Captured from review conversation. Companion to `decisions.md` and `firmware_roadmap.md`.
+
+The name *kilo* is Hawaiian for observer — the patient, expert watching that traditional navigators used to read the stars, the sea, and the wind. KiloGlide is a kilo of paddling: a device whose job is to observe your glide and tell you, with discipline, what it sees.
+
+That framing matters because it sets the product's voice. KiloGlide doesn't coach. It doesn't motivate. It observes and reports. The coaching happens between the paddler and the data, or between the paddler and a human coach reading the data together.
 
 ---
 
@@ -53,7 +57,7 @@ Don't decide today — but notice which one the work is drifting toward, and whe
 
 ## Data ideas: what actually helps paddlers
 
-These are the metrics where the gyro + high-rate IMU let Kikaha do things SpeedCoach structurally cannot.
+These are the metrics where the gyro + high-rate IMU let KiloGlide do things SpeedCoach structurally cannot. They're also where the *kilo* — the observer — earns its name. Each one represents something a paddler can't see for themselves and a coach can only see imperfectly from a chase boat.
 
 ### Asymmetry detection
 
@@ -83,7 +87,7 @@ Across a long piece, force curves narrow, asymmetry widens, and cadence drifts i
 
 ### Run linking in downwind
 
-The metric isn't "did you catch a wave," it's "did you stay on it, and did you transition cleanly to the next." Time-on-wave plus inter-run gap plus the pitch trace tells the whole story. SpeedCoach gives a number; Kikaha can give the trace plus derived metrics:
+The metric isn't "did you catch a wave," it's "did you stay on it, and did you transition cleanly to the next." Time-on-wave plus inter-run gap plus the pitch trace tells the whole story. SpeedCoach gives a number; KiloGlide can give the trace plus derived metrics:
 
 - Catch success rate (attempts / catches)
 - Catch latency (paddle-effort start → glide onset)

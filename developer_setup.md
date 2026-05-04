@@ -1,4 +1,4 @@
-# Kikaha Coach — Developer Setup Guide
+# KiloGlide — Developer Setup Guide
 
 A walkthrough for getting from "I can write firmware" to "I have a proper development environment with version control, dependency management, and a sane workflow." Written assuming you're comfortable with C/C++, registers, and peripherals, but new to git, package managers, and modern project structure.
 
@@ -24,7 +24,7 @@ You only do this once per machine. Total time: 30 minutes if nothing fights you.
 
 Mac: comes preinstalled, or `brew install git`.
 Linux: `sudo apt install git` (Debian/Ubuntu) or equivalent.
-Windows: download from [git-scm.com](https://git-scm.com), accept defaults.
+Windows: download from [git-scm.com](https://git-scm.com), accept defaults. **Use Git Bash** as your terminal — it's the Unix-like shell installed alongside Git, and the commands in this guide assume it.
 
 Configure your identity once — every commit is signed with this:
 
@@ -35,7 +35,13 @@ git config --global init.defaultBranch main
 git config --global pull.rebase false
 ```
 
-The last two settle minor configuration questions in advance so git doesn't ask you about them later.
+On Windows, also set:
+
+```bash
+git config --global core.autocrlf true
+```
+
+This handles the Windows-vs-Unix line endings difference automatically.
 
 ### 2. VSCode
 
@@ -51,7 +57,7 @@ You'll want this for the analysis side. Python 3.10+ is fine.
 
 Mac: `brew install python@3.11`
 Linux: usually preinstalled; otherwise `sudo apt install python3 python3-venv python3-pip`
-Windows: download from [python.org](https://python.org), check "Add to PATH" during install
+Windows: download from [python.org](https://python.org), **check "Add to PATH" during install** — this is the most common Windows Python gotcha.
 
 ### 5. GitHub account
 
@@ -72,6 +78,26 @@ ssh -T git@github.com
 
 ---
 
+## Where to put your project
+
+**Don't put it in your home directory.** Convention on Windows is `C:\Projects\` or `C:\dev\`. On Mac/Linux, `~/Projects/` or `~/code/`.
+
+Reasons: shorter paths, no OneDrive sync interference (which fights with `.git` folders), no clutter mixed with application data, easier to find.
+
+```bash
+# Windows (in Git Bash):
+mkdir -p /c/Projects
+cd /c/Projects
+
+# Mac/Linux:
+mkdir -p ~/Projects
+cd ~/Projects
+```
+
+You'll clone the repo into this directory in the next section.
+
+---
+
 ## Create the repo
 
 Two paths. Pick one — they end in the same place.
@@ -81,18 +107,17 @@ Two paths. Pick one — they end in the same place.
 This is the simpler path for beginners.
 
 1. Go to GitHub, click the green "New" button (or [github.com/new](https://github.com/new))
-2. Repository name: `kikaha-coach`
+2. Repository name: `kiloglide`
 3. Set it to **Private**
 4. Check "Add a README file" — gives you something to start with
 5. Add a `.gitignore` from the dropdown — pick "C++" (we'll customize it)
 6. Click "Create repository"
 7. On the repo page, click the green "Code" button → SSH → copy the URL
-8. In your terminal:
+8. In your terminal (already in `/c/Projects` or `~/Projects`):
 
 ```bash
-cd ~/Projects   # or wherever you keep code
-git clone git@github.com:yourusername/kikaha-coach.git
-cd kikaha-coach
+git clone git@github.com:yourusername/kiloglide.git
+cd kiloglide
 ```
 
 You now have a local copy synced with GitHub.
@@ -102,13 +127,13 @@ You now have a local copy synced with GitHub.
 If you already have files locally you want to preserve:
 
 ```bash
-mkdir kikaha-coach && cd kikaha-coach
+mkdir kiloglide && cd kiloglide
 git init
 # ... create files ...
 git add .
 git commit -m "Initial commit"
 # Then create empty repo on GitHub (don't add README), and:
-git remote add origin git@github.com:yourusername/kikaha-coach.git
+git remote add origin git@github.com:yourusername/kiloglide.git
 git branch -M main
 git push -u origin main
 ```
@@ -117,10 +142,10 @@ git push -u origin main
 
 ## Project structure
 
-In your `kikaha-coach` directory, set up this layout:
+In your `kiloglide` directory, set up this layout:
 
 ```
-kikaha-coach/
+kiloglide/
 ├── README.md
 ├── .gitignore
 ├── platformio.ini
@@ -135,6 +160,7 @@ kikaha-coach/
 │   ├── data_insights.md
 │   ├── firmware_roadmap.md
 │   ├── developer_setup.md
+│   ├── math_primer.md
 │   └── log_format.md
 └── sessions/        # gitignored — water test logs go here
 ```
@@ -146,7 +172,7 @@ mkdir -p firmware/src firmware/include tools analysis docs sessions
 touch firmware/src/main.cpp
 ```
 
-Drop your existing `decisions.md`, `data_insights.md`, and `firmware_roadmap.md` into `docs/`.
+Drop your existing markdown docs into `docs/`.
 
 ---
 
@@ -244,7 +270,7 @@ build_type = debug
 build_flags =
     ${env:esp32-s3-devkitc-1.build_flags}
     -DCORE_DEBUG_LEVEL=5
-    -DKIKAHA_DEBUG=1
+    -DKILOGLIDE_DEBUG=1
 ```
 
 A few notes on what's happening here:
@@ -252,7 +278,7 @@ A few notes on what's happening here:
 - `[env:...]` defines a build environment. You can have multiple — production, debug, simulator. Switch between them with `pio run -e <name>`.
 - `lib_deps` lists Arduino libraries. PlatformIO downloads and pins them automatically. You don't manually copy library folders around like in old Arduino IDE.
 - The board target tells PlatformIO which MCU you have so it picks the right toolchain and memory layout.
-- `build_flags` are `#define`s passed to the compiler. `KIKAHA_DEBUG=1` lets you write `#ifdef KIKAHA_DEBUG` blocks that only compile in debug builds.
+- `build_flags` are `#define`s passed to the compiler. `KILOGLIDE_DEBUG=1` lets you write `#ifdef KILOGLIDE_DEBUG` blocks that only compile in debug builds.
 - The second environment **extends** the first — same settings, different overrides. This is how you avoid duplicating configuration.
 
 ### `firmware/src/main.cpp`
@@ -269,7 +295,7 @@ A blinky to verify your whole toolchain works on day 1. The dev kit has an onboa
 void setup() {
     Serial.begin(115200);
     delay(2000);  // Give USB-CDC time to enumerate so we don't miss boot logs
-    Serial.println("Kikaha Coach firmware booting...");
+    Serial.println("KiloGlide firmware booting...");
 
     pinMode(LED_PIN, OUTPUT);
 }
@@ -290,10 +316,16 @@ If the RGB LED is addressable (NeoPixel-style), the above won't blink it visibly
 This is the front door of your repo. It tells future-you (and any collaborator) what this is and how to use it.
 
 ```markdown
-# Kikaha Coach
+# KiloGlide
 
 Open-water paddling coach for canoe/SUP downwind and distance training.
-ESP32-S3 + LSM6DSOX IMU + u-blox GPS + Sharp memory LCD, in a Pelican 1010 case.
+
+*Kilo* is Hawaiian for observer — the patient, expert watching that
+traditional navigators used to read the stars, the sea, and the wind.
+KiloGlide observes your glide and tells you, with discipline, what it sees.
+
+ESP32-S3 + LSM6DSOX IMU + u-blox GPS + Sharp memory LCD,
+in a Pelican 1010 case.
 
 ## Status
 
@@ -305,6 +337,7 @@ Early hardware bring-up. See `docs/firmware_roadmap.md` for the staged plan.
 - [`docs/data_insights.md`](docs/data_insights.md) — data ideas and design principles
 - [`docs/firmware_roadmap.md`](docs/firmware_roadmap.md) — staged firmware development plan
 - [`docs/developer_setup.md`](docs/developer_setup.md) — dev environment setup
+- [`docs/math_primer.md`](docs/math_primer.md) — math primer for the algorithms
 - [`docs/log_format.md`](docs/log_format.md) — binary session log spec (TBD)
 
 ## Building
@@ -339,7 +372,7 @@ Once setup is done, your day-to-day looks like this. Memorize the four-step rhyt
 ### 1. Pull (start of session)
 
 ```bash
-cd ~/Projects/kikaha-coach
+cd /c/Projects/kiloglide   # or ~/Projects/kiloglide on Mac/Linux
 git pull
 ```
 
@@ -381,7 +414,7 @@ This sends your commits to GitHub. Now they exist in two places — your laptop 
 
 ### How often to commit
 
-More than feels natural. Software people commit shockingly often when you watch them — sometimes every 15 minutes during active work. The reason: each commit is an undo point. The cost of an unnecessary commit is zero; the cost of losing four hours of work because you didn't commit is four hours.
+More than feels natural. Software people commit shockingly often when you watch them — sometimes every 15 minutes during active work. The reason: each commit is an undo point, and the cost of a wasted commit is zero. If you'd be annoyed losing what you just typed, commit it.
 
 Rough heuristic: if you'd be annoyed losing what you just did, commit it.
 
@@ -500,6 +533,24 @@ Rule of thumb: if a file is **generated** (build output, cache, log) or **secret
 
 ---
 
+## Windows-specific notes
+
+A few things that bite Windows users specifically.
+
+**Use Git Bash, not PowerShell or CMD** for the commands in this guide. PowerShell can do most of it but uses different syntax for some things; Git Bash matches the Unix-style commands here exactly.
+
+**Paste in Git Bash is `Shift+Insert` or right-click**, not `Ctrl+V`. Trips up everyone the first time.
+
+**Path translation.** Git Bash shows Windows paths in a Unix-like form: `C:\Projects\kiloglide` becomes `/c/Projects/kiloglide`. Both work; Git Bash prefers the forward-slash form when you type commands.
+
+**Antivirus interference.** Windows Defender sometimes scans every file PlatformIO writes during a build, slowing builds dramatically. If your builds feel implausibly slow (30+ seconds for trivial changes), add the project folder and the `.platformio` toolchain folder (in your home directory) to the AV exclusion list.
+
+**Don't use WSL2 for this project.** WSL is a great Linux environment for many things, but USB device passthrough for flashing the ESP32 requires extra setup that breaks at inconvenient moments. Stay native Windows + Git Bash + PlatformIO.
+
+**USB drivers for the dev kit.** The ESP32-S3-DevKitC-1 has a native USB port and (on some variants) a UART port through a CP2102 or CH340 chip. The native port works without drivers on Windows 10/11. If Device Manager shows "Unknown Device" with a yellow triangle, install the corresponding USB-to-UART driver from Silicon Labs or WCH.
+
+---
+
 ## Where to go from here
 
 You don't need any of this yet, but it's the natural next layer when the project gets bigger:
@@ -522,7 +573,7 @@ A few things that bite people in their first month.
 
 **"I committed something huge by accident."** You ran `git add .` and accidentally pulled in a 500 MB session log. Before you push: `git reset HEAD~1` to undo the commit, add the big thing to `.gitignore`, recommit. After you push: it's harder; ask for help. The git internals remember the file forever once it's in.
 
-**"PlatformIO won't find my board."** USB driver issue, almost always. Mac and Linux usually work out of the box; Windows often needs a CP210x or CH340 driver depending on the dev kit's USB-to-serial chip. The ESP32-S3-DevKitC-1 uses native USB so this is less of an issue, but check Device Manager.
+**"PlatformIO won't find my board."** USB driver issue, almost always. See the Windows-specific notes above.
 
 **"My code compiled but the board behaves weirdly after upload."** Hold the BOOT button while clicking Upload, or before plugging in. The S3 sometimes needs help getting into download mode, especially with USB-CDC enabled.
 
@@ -535,10 +586,13 @@ A few things that bite people in their first month.
 Putting it all together. After installs are done:
 
 ```bash
+# Get to your projects folder
+cd /c/Projects                # Windows
+# or: cd ~/Projects           # Mac/Linux
+
 # Get the code on disk
-cd ~/Projects
-git clone git@github.com:yourusername/kikaha-coach.git
-cd kikaha-coach
+git clone git@github.com:yourusername/kiloglide.git
+cd kiloglide
 
 # Set up the structure
 mkdir -p firmware/src firmware/include tools analysis docs sessions
