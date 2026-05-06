@@ -1,20 +1,28 @@
 #include <Arduino.h>
 
-// ESP32-S3-DevKitC-1 onboard RGB LED on GPIO 48
-#define LED_PIN 48
+#define RGB_LED_PIN 38
 
 void setup() {
-    Serial.begin(115200);
-    delay(2000);  // Give USB-CDC time to enumerate
-    Serial.println("KiloGlide firmware booting...");
+  Serial.begin(115200);
+  delay(1000);
 
-    pinMode(LED_PIN, OUTPUT);
+  Serial.println("KiloGlide RGB blinky starting on GPIO 38");
 }
 
 void loop() {
-    digitalWrite(LED_PIN, HIGH);
-    Serial.println("blink");
-    delay(500);
-    digitalWrite(LED_PIN, LOW);
-    delay(500);
+  Serial.println("RED");
+  neopixelWrite(RGB_LED_PIN, 255, 0, 0);
+  delay(1000);
+
+  Serial.println("GREEN");
+  neopixelWrite(RGB_LED_PIN, 0, 255, 0);
+  delay(1000);
+
+  Serial.println("BLUE");
+  neopixelWrite(RGB_LED_PIN, 0, 0, 255);
+  delay(1000);
+
+  Serial.println("OFF");
+  neopixelWrite(RGB_LED_PIN, 0, 0, 0);
+  delay(1000);
 }
