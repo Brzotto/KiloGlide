@@ -5,14 +5,20 @@
 #define RGB_LED_PIN 38
 
 // SPI2 pins and chip select for the LSM6DSOX
-#define IMU_CS    10
-#define SPI_SCK   12
-#define SPI_MOSI  11  // SDX on the breakout board
-#define SPI_MISO  13  // DO on the breakout board
+#define IMU_CS    10  // CS on the breakout board (bottom)
+#define SPI_SCK   12  // SCL on the breakout board (bottom)
+#define SPI_MOSI  11  // SDA on the breakout board (bottom)
+#define SPI_MISO  13  // DO on the breakout board (bottom)
+
+// INT1 from the LSM6DSOX → GPIO 4. The chip drives this pin high whenever
+// the FIFO crosses our watermark threshold; the ESP32 sees that edge and
+// fires an ISR that flags the loop to drain.
+#define IMU_INT1  4
 
 // LSM6DSOX register map — only the FIFO-related registers we drive directly.
 // The Adafruit library handles ODR / range; it doesn't expose FIFO control,
 // so we talk to these by hand.
+constexpr uint8_t REG_INT1_CTRL    = 0x0D;  // bit3 = INT1_FIFO_TH (route watermark → INT1)
 constexpr uint8_t REG_FIFO_CTRL1   = 0x07;  // WTM[7:0]
 constexpr uint8_t REG_FIFO_CTRL2   = 0x08;  // WTM[8] lives in bit 0
 constexpr uint8_t REG_FIFO_CTRL3   = 0x09;  // BDR_GY[7:4] | BDR_XL[3:0]
@@ -36,7 +42,7 @@ constexpr uint16_t FIFO_WATERMARK = 32;
 // ±16g range:      0.488 mg/LSB → m/s²/LSB
 // ±2000 dps range: 70 mdps/LSB  → rad/s/LSB
 constexpr float ACCEL_SCALE = 0.000488f * 9.80665f;
-constexpr float GYRO_SCALE  = 0.070f * (3.14159265f / 180.0f) / 1000.0f;
+constexpr float GYRO_SCALE  = 0.070f * (3.14159265f / 180.0f); 
 
 // The Adafruit library keeps `spi_dev` as a protected member. Subclassing
 // lets us reuse the same SPI device the library already configured, instead
@@ -61,6 +67,23 @@ public:
 };
 
 IMU imu;
+
+// `volatile` tells the compiler "this variable can change behind your back" —
+// without it, the optimizer might cache fifoReady in a register and never see
+// the ISR's update, leaving the loop spinning forever waiting for a flag that
+// (from the optimizer's perspective) "no code" ever sets.
+volatile bool fifoReady = false;
+
+// The ISR. Three rules for ESP32 ISRs:
+//   1. Mark with IRAM_ATTR. ISRs must run from instruction RAM, not flash.
+//      Flash can be unavailable mid-write (e.g. OTA); IRAM is always there.
+//   2. Keep it SHORT. No SPI, no Serial.print, no delay, no malloc. Just
+//      flip a flag and return — anything heavier risks blocking other ISRs
+//      and burning real-time deadlines.
+//   3. No floating point. The FPU context isn't saved by default in ISRs.
+void IRAM_ATTR onFifoWatermark() {
+  fifoReady = true;
+}
 
 static void configureFifo() {
   // Watermark threshold (9 bits split across CTRL1 + CTRL2 bit 0).
@@ -146,14 +169,38 @@ void setup() {
   imu.setGyroDataRate(LSM6DS_RATE_104_HZ);
 
   configureFifo();
-  Serial.println("FIFO configured. Columns: drained  ax ay az (m/s2)  gx gy gz (rad/s)");
+
+  // Tell the chip to route its FIFO watermark flag to the INT1 pin. Bit 3 of
+  // INT1_CTRL is INT1_FIFO_TH. Default polarity is active-high, push-pull —
+  // we don't need to touch CTRL3_C to invert or open-drain anything.
+  imu.writeReg(REG_INT1_CTRL, 0x08);
+
+  // Wire the ESP32 GPIO and attach our ISR. RISING edge means we get one ISR
+  // call when the FIFO crosses the threshold; the pin then stays high until
+  // we drain below the watermark, at which point it falls and re-arms.
+  pinMode(IMU_INT1, INPUT);
+  attachInterrupt(digitalPinToInterrupt(IMU_INT1), onFifoWatermark, RISING);
+
+  Serial.println("FIFO + IRQ configured. Columns: drained  ax ay az (m/s2)  gx gy gz (rad/s)");
 }
 
 void loop() {
-  drainFifo();
-  // Deliberately slow. At 104 Hz, accel + gyro produce ~20 samples per 100 ms.
-  // If the printed `drained` column hovers around 20, the chip is buffering
-  // exactly as expected — samples accumulated in hardware while we slept.
-  // Drop this delay to 0 later; it's here now only as a teaching signal.
-  delay(100);
+  // The whole loop is now event-driven: nothing happens until the chip says
+  // "I have data." This is the practical win of the interrupt — no polling,
+  // no jitter, no guesswork about when to drain.
+  if (fifoReady) {
+    // Clear the flag BEFORE we drain. If a new watermark fires while we're
+    // mid-drain, the ISR re-sets the flag and we'll catch it next iteration.
+    // (Clearing AFTER would race: an IRQ between drain and clear gets lost.)
+    fifoReady = false;
+
+    // Drain in a loop until the FIFO is empty. Normally one pass is enough,
+    // but if more samples arrived while we were busy this catches them too.
+    // drainFifo() returns 0 when the FIFO is empty.
+    while (drainFifo() > 0) { }
+  }
+
+  // Yield briefly so FreeRTOS can run its housekeeping tasks (WiFi, watchdog,
+  // etc.). delay(1) is the idiomatic Arduino-on-ESP32 way to say "I'm idle."
+  delay(1);
 }
