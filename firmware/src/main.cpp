@@ -31,22 +31,32 @@ constexpr uint8_t TAG_ACCEL = 0x02;
 // 16 accel + 16 gyro samples accumulated — a comfortable working size.
 constexpr uint16_t FIFO_WATERMARK = 32;
 
+// Sensitivity constants from the LSM6DSOX datasheet (Table 2).
+// The FIFO delivers raw int16 — multiply to get physical units.
+// ±16g range:      0.488 mg/LSB → m/s²/LSB
+// ±2000 dps range: 70 mdps/LSB  → rad/s/LSB
+constexpr float ACCEL_SCALE = 0.000488f * 9.80665f;
+constexpr float GYRO_SCALE  = 0.070f * (3.14159265f / 180.0f) / 1000.0f;
+
 // The Adafruit library keeps `spi_dev` as a protected member. Subclassing
 // lets us reuse the same SPI device the library already configured, instead
 // of opening a second SPI session that would fight for the bus.
 class IMU : public Adafruit_LSM6DSOX {
 public:
   uint8_t readReg(uint8_t reg) {
-    Adafruit_BusIO_Register r(spi_dev, reg, AD8_HIGH_TOREAD);
+    Adafruit_BusIO_Register r(spi_dev, reg, ADDRBIT8_HIGH_TOREAD);
     return r.read();
   }
   void writeReg(uint8_t reg, uint8_t val) {
-    Adafruit_BusIO_Register r(spi_dev, reg, AD8_HIGH_TOREAD);
+    Adafruit_BusIO_Register r(spi_dev, reg, ADDRBIT8_HIGH_TOREAD);
     r.write(val);
   }
-  bool readRegs(uint8_t reg, uint8_t* buf, size_t n) {
-    Adafruit_BusIO_Register r(spi_dev, reg, AD8_HIGH_TOREAD);
-    return r.read(buf, n);
+  // readBurst bypasses Adafruit_BusIO_Register whose read() takes uint8_t len
+  // (max 255 bytes). At 64 entries × 7 bytes = 448, that silently truncates.
+  // Going directly to spi_dev uses size_t so there's no limit.
+  bool readBurst(uint8_t reg, uint8_t* buf, size_t n) {
+    uint8_t addr = reg | 0x80;  // SPI read = address with bit 7 set
+    return spi_dev->write_then_read(&addr, 1, buf, n);
   }
 };
 
@@ -88,11 +98,9 @@ static uint16_t drainFifo() {
   constexpr uint16_t kMaxDrain = 64;
   static uint8_t buf[kMaxDrain * 7];
   uint16_t toRead = available > kMaxDrain ? kMaxDrain : available;
-  imu.readRegs(REG_FIFO_DATA, buf, (size_t)toRead * 7);
+  imu.readBurst(REG_FIFO_DATA, buf, (size_t)toRead * 7);
 
-  // Walk every entry, but only print the most recent of each kind. At 104 Hz
-  // we'd be flooding serial otherwise — and right now we just want proof
-  // that the FIFO is actually buffering data between drain calls.
+  // Walk every entry, keeping the most recent of each type.
   int16_t ax = 0, ay = 0, az = 0;
   int16_t gx = 0, gy = 0, gz = 0;
   for (uint16_t i = 0; i < toRead; i++) {
@@ -105,10 +113,15 @@ static uint16_t drainFifo() {
     else if (tag == TAG_GYRO)  { gx = x; gy = y; gz = z; }
   }
 
-  // First column is the drained count — watch it grow when we slow the loop.
+  // Scale raw int16 → physical units (m/s² and rad/s).
+  // First column is drained count — watch it grow when the loop delay is high.
   Serial.print(toRead); Serial.print('\t');
-  Serial.print(ax); Serial.print('\t'); Serial.print(ay); Serial.print('\t'); Serial.print(az); Serial.print('\t');
-  Serial.print(gx); Serial.print('\t'); Serial.print(gy); Serial.print('\t'); Serial.println(gz);
+  Serial.print(ax * ACCEL_SCALE, 3); Serial.print('\t');
+  Serial.print(ay * ACCEL_SCALE, 3); Serial.print('\t');
+  Serial.print(az * ACCEL_SCALE, 3); Serial.print('\t');
+  Serial.print(gx * GYRO_SCALE,  4); Serial.print('\t');
+  Serial.print(gy * GYRO_SCALE,  4); Serial.print('\t');
+  Serial.println(gz * GYRO_SCALE, 4);
   return toRead;
 }
 
@@ -133,7 +146,7 @@ void setup() {
   imu.setGyroDataRate(LSM6DS_RATE_104_HZ);
 
   configureFifo();
-  Serial.println("FIFO configured. Columns: drained  ax ay az  gx gy gz   (raw int16)");
+  Serial.println("FIFO configured. Columns: drained  ax ay az (m/s2)  gx gy gz (rad/s)");
 }
 
 void loop() {
