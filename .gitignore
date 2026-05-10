@@ -40,3 +40,4 @@ desktop.ini
 # Secrets
 .env
 secrets.h
+.claude/
