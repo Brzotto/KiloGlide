@@ -22,10 +22,11 @@ constexpr uint8_t SD_MISO = 14;
 // lets us hand SdFat a bus that's completely separate from the IMU.
 SPIClass sdSPI(HSPI);
 
-// 20 MHz is a safe starting point for SPI to most cards. Some cards push 40+,
-// but breadboard wiring won't reliably support that — wait until we're on PCB.
+// 4 MHz for breadboard bringup. The SD spec's slow-but-bulletproof speed —
+// works through long jumper wires without flaky bit errors. Crank up to
+// 20+ MHz once we're on a PCB and the data rate actually demands it.
 SdFat sd;
-SdSpiConfig sdConfig(SD_CS, DEDICATED_SPI, SD_SCK_MHZ(20), &sdSPI);
+SdSpiConfig sdConfig(SD_CS, DEDICATED_SPI, SD_SCK_MHZ(4), &sdSPI);
 
 void halt(const char* msg) {
   Serial.print("ERROR: ");
