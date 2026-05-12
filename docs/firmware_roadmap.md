@@ -157,7 +157,7 @@ This is where you have a working data logger. Get it on a boat.
 
 ### Goals
 
-1. microSD on **dedicated SPI3** (do not share — SD cards misbehave on shared buses). Use SdFat in `O_RDWR | O_CREAT | O_AT_END` mode with periodic `flush()` (every 1–5 seconds, not every record).
+1. microSD on **dedicated SPI3** (do not share — SD cards misbehave on shared buses). Pins: SCK=GPIO 6, MOSI=GPIO 7, MISO=GPIO 14, CS=GPIO 5. Use SdFat in `O_RDWR | O_CREAT | O_AT_END` mode with periodic `flush()` (every 1–5 seconds, not every record).
 2. Implement the binary log writer per `log_format.h`. Write IMU records at 416 Hz, GPS records at 5 Hz.
 3. GPS via I2C (SDA=GPIO 8, SCL=GPIO 9) using SparkFun u-blox library, UBX binary mode. Configure for 5 Hz updates, request PVT messages.
 4. Session lifecycle: file = session. Filename `kiloglide_<session_id>.bin`. **Start on button press for v0** (not motion-detect — false starts in gear bags). End on button press or idle timeout.

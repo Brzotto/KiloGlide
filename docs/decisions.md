@@ -47,11 +47,11 @@ Running log of project decisions and reasoning. Update this when decisions chang
 
 ## Communication Buses
 
-| Bus | Devices | Notes |
-|---|---|---|
-| SPI2 (shared) | IMU (CS=GPIO 10) + LCD (different CS) | Use beginTransaction() with correct settings before each device |
-| SPI3 (dedicated) | microSD | Don't share — SD cards misbehave on shared buses |
-| I2C | GPS (SDA=GPIO 8, SCL=GPIO 9) | Low data rate, Qwiic-compatible |
+| Bus | Devices | Pins | Notes |
+|---|---|---|---|
+| SPI2 (shared) | IMU + LCD | SCK=12, MOSI=11, MISO=13, IMU_CS=10 | Use beginTransaction() with correct settings before each device |
+| SPI3 (dedicated) | microSD | SCK=6, MOSI=7, MISO=14, CS=5 | Dedicated — SD cards misbehave on shared buses |
+| I2C | GPS | SDA=8, SCL=9 | Qwiic-compatible, 400 kHz |
 
 ---
 
