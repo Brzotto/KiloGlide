@@ -6,8 +6,8 @@ Open-water paddling coach. ESP32-S3 + LSM6DSOX IMU + u-blox SAM-M8Q GPS + Sharp 
 
 ## Project status
 
-Early firmware development. Hardware is on the bench. Blinky works.
-Currently bringing up the IMU over SPI.
+Wave 1 complete: IMU (LSM6DSOX) running with FIFO + watermark interrupt.
+Wave 2 in progress: GPS bringup done, SD card next.
 
 ## Hardware
 
@@ -15,7 +15,7 @@ Currently bringing up the IMU over SPI.
 - IMU: Adafruit LSM6DSOX breakout (SPI on SPI2, CS = GPIO 10)
 - GPS: SparkFun SAM-M8Q (I2C, SDA = GPIO 8, SCL = GPIO 9)
 - Display: Adafruit SHARP Memory Display 2.7" 400x240 (SPI2, shared with IMU, different CS)
-- Storage: Adafruit microSD breakout (dedicated SPI3)
+- Storage: Adafruit microSD breakout (SPI3, SCK=GPIO 6, MOSI=GPIO 7, MISO=GPIO 14, CS=GPIO 5)
 - Power: Adafruit bq25185 charger + 2000 mAh LiPo
 - Case: Custom waterproof case (in development)
 
