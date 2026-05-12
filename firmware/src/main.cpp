@@ -1,206 +1,76 @@
+// main.cpp — KiloGlide firmware entry point.
+//
+// Orchestration only. Each sensor lives in its own module (imu, gps, ...).
+// Setup initializes each module; loop pumps each module's update() and
+// prints results. This file should stay short — if logic is creeping in
+// here, it probably belongs in a module.
+
 #include <Arduino.h>
-#include <Adafruit_LSM6DSOX.h>
-#include <Adafruit_BusIO_Register.h>
+
+#include "imu.h"
+#include "gps.h"
 
 #define RGB_LED_PIN 38
 
-// SPI2 pins and chip select for the LSM6DSOX
-#define IMU_CS    10  // CS on the breakout board (bottom)
-#define SPI_SCK   12  // SCL on the breakout board (bottom)
-#define SPI_MOSI  11  // SDA on the breakout board (bottom)
-#define SPI_MISO  13  // DO on the breakout board (bottom)
-
-// INT1 from the LSM6DSOX → GPIO 4. The chip drives this pin high whenever
-// the FIFO crosses our watermark threshold; the ESP32 sees that edge and
-// fires an ISR that flags the loop to drain.
-#define IMU_INT1  4
-
-// LSM6DSOX register map — only the FIFO-related registers we drive directly.
-// The Adafruit library handles ODR / range; it doesn't expose FIFO control,
-// so we talk to these by hand.
-constexpr uint8_t REG_INT1_CTRL    = 0x0D;  // bit3 = INT1_FIFO_TH (route watermark → INT1)
-constexpr uint8_t REG_FIFO_CTRL1   = 0x07;  // WTM[7:0]
-constexpr uint8_t REG_FIFO_CTRL2   = 0x08;  // WTM[8] lives in bit 0
-constexpr uint8_t REG_FIFO_CTRL3   = 0x09;  // BDR_GY[7:4] | BDR_XL[3:0]
-constexpr uint8_t REG_FIFO_CTRL4   = 0x0A;  // FIFO_MODE[2:0]
-constexpr uint8_t REG_FIFO_STATUS1 = 0x3A;  // DIFF_FIFO[7:0]   (samples queued)
-constexpr uint8_t REG_FIFO_STATUS2 = 0x3B;  // bit7=WTM_IA, bits[1:0]=DIFF_FIFO[9:8]
-constexpr uint8_t REG_FIFO_DATA    = 0x78;  // tag + 6 data bytes, auto-increments
-
-// Tag values live in the top 5 bits of the tag byte. Many more tags exist
-// (timestamp, temperature, config-change markers); we only consume these two.
-constexpr uint8_t TAG_GYRO  = 0x01;
-constexpr uint8_t TAG_ACCEL = 0x02;
-
-// Watermark = how many samples queue up before the chip flags "drain me."
-// Both accel and gyro batch independently, so a level of 32 means roughly
-// 16 accel + 16 gyro samples accumulated — a comfortable working size.
-constexpr uint16_t FIFO_WATERMARK = 32;
-
-// Sensitivity constants from the LSM6DSOX datasheet (Table 2).
-// The FIFO delivers raw int16 — multiply to get physical units.
-// ±16g range:      0.488 mg/LSB → m/s²/LSB
-// ±2000 dps range: 70 mdps/LSB  → rad/s/LSB
-constexpr float ACCEL_SCALE = 0.000488f * 9.80665f;
-constexpr float GYRO_SCALE  = 0.070f * (3.14159265f / 180.0f); 
-
-// The Adafruit library keeps `spi_dev` as a protected member. Subclassing
-// lets us reuse the same SPI device the library already configured, instead
-// of opening a second SPI session that would fight for the bus.
-class IMU : public Adafruit_LSM6DSOX {
-public:
-  uint8_t readReg(uint8_t reg) {
-    Adafruit_BusIO_Register r(spi_dev, reg, ADDRBIT8_HIGH_TOREAD);
-    return r.read();
-  }
-  void writeReg(uint8_t reg, uint8_t val) {
-    Adafruit_BusIO_Register r(spi_dev, reg, ADDRBIT8_HIGH_TOREAD);
-    r.write(val);
-  }
-  // readBurst bypasses Adafruit_BusIO_Register whose read() takes uint8_t len
-  // (max 255 bytes). At 64 entries × 7 bytes = 448, that silently truncates.
-  // Going directly to spi_dev uses size_t so there's no limit.
-  bool readBurst(uint8_t reg, uint8_t* buf, size_t n) {
-    uint8_t addr = reg | 0x80;  // SPI read = address with bit 7 set
-    return spi_dev->write_then_read(&addr, 1, buf, n);
-  }
-};
-
-IMU imu;
-
-// `volatile` tells the compiler "this variable can change behind your back" —
-// without it, the optimizer might cache fifoReady in a register and never see
-// the ISR's update, leaving the loop spinning forever waiting for a flag that
-// (from the optimizer's perspective) "no code" ever sets.
-volatile bool fifoReady = false;
-
-// The ISR. Three rules for ESP32 ISRs:
-//   1. Mark with IRAM_ATTR. ISRs must run from instruction RAM, not flash.
-//      Flash can be unavailable mid-write (e.g. OTA); IRAM is always there.
-//   2. Keep it SHORT. No SPI, no Serial.print, no delay, no malloc. Just
-//      flip a flag and return — anything heavier risks blocking other ISRs
-//      and burning real-time deadlines.
-//   3. No floating point. The FPU context isn't saved by default in ISRs.
-void IRAM_ATTR onFifoWatermark() {
-  fifoReady = true;
-}
-
-static void configureFifo() {
-  // Watermark threshold (9 bits split across CTRL1 + CTRL2 bit 0).
-  imu.writeReg(REG_FIFO_CTRL1, FIFO_WATERMARK & 0xFF);
-  imu.writeReg(REG_FIFO_CTRL2, 0x00);
-
-  // Batch data rate. Encoding from the datasheet's BDR table:
-  //   0001=12.5Hz  0010=26Hz  0011=52Hz  0100=104Hz  0110=416Hz
-  // 0x44 = 0100_0100 — 104 Hz for both gyro (high nibble) and accel (low).
-  // Match this to whatever ODR you set on the sensors below.
-  imu.writeReg(REG_FIFO_CTRL3, 0x44);
-
-  // FIFO mode bits[2:0]: 110 = continuous. If we ever fall behind, the chip
-  // overwrites the oldest sample rather than stalling. We'd rather drop
-  // stale data than block the sensor pipeline.
-  imu.writeReg(REG_FIFO_CTRL4, 0x06);
-}
-
-static uint16_t fifoLevel() {
-  uint8_t s1 = imu.readReg(REG_FIFO_STATUS1);
-  uint8_t s2 = imu.readReg(REG_FIFO_STATUS2);
-  return ((uint16_t)(s2 & 0x03) << 8) | s1;
-}
-
-// Drain everything currently in the FIFO. Each entry is 7 bytes:
-//   [tag] [x_lo x_hi] [y_lo y_hi] [z_lo z_hi]
-// The tag byte tells us whether this entry is accel, gyro, or something else.
-static uint16_t drainFifo() {
-  uint16_t available = fifoLevel();
-  if (available == 0) return 0;
-
-  // Cap each drain so a single SPI transaction stays bounded. If more is
-  // queued, the next loop iteration sweeps it up — nothing is lost because
-  // the chip keeps batching while we're busy.
-  constexpr uint16_t kMaxDrain = 64;
-  static uint8_t buf[kMaxDrain * 7];
-  uint16_t toRead = available > kMaxDrain ? kMaxDrain : available;
-  imu.readBurst(REG_FIFO_DATA, buf, (size_t)toRead * 7);
-
-  // Walk every entry, keeping the most recent of each type.
-  int16_t ax = 0, ay = 0, az = 0;
-  int16_t gx = 0, gy = 0, gz = 0;
-  for (uint16_t i = 0; i < toRead; i++) {
-    uint8_t* s = &buf[i * 7];
-    uint8_t tag = (s[0] >> 3) & 0x1F;
-    int16_t x = (int16_t)(s[1] | ((uint16_t)s[2] << 8));
-    int16_t y = (int16_t)(s[3] | ((uint16_t)s[4] << 8));
-    int16_t z = (int16_t)(s[5] | ((uint16_t)s[6] << 8));
-    if      (tag == TAG_ACCEL) { ax = x; ay = y; az = z; }
-    else if (tag == TAG_GYRO)  { gx = x; gy = y; gz = z; }
-  }
-
-  // Scale raw int16 → physical units (m/s² and rad/s).
-  // First column is drained count — watch it grow when the loop delay is high.
-  Serial.print(toRead); Serial.print('\t');
-  Serial.print(ax * ACCEL_SCALE, 3); Serial.print('\t');
-  Serial.print(ay * ACCEL_SCALE, 3); Serial.print('\t');
-  Serial.print(az * ACCEL_SCALE, 3); Serial.print('\t');
-  Serial.print(gx * GYRO_SCALE,  4); Serial.print('\t');
-  Serial.print(gy * GYRO_SCALE,  4); Serial.print('\t');
-  Serial.println(gz * GYRO_SCALE, 4);
-  return toRead;
-}
+static bool gpsAvailable = false;
+static unsigned long lastImuPrint = 0;
+static unsigned long lastGpsPrint = 0;
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("KiloGlide IMU bringup (FIFO polled)");
+  Serial.println("KiloGlide boot");
 
-  neopixelWrite(RGB_LED_PIN, 0, 20, 0);
+  neopixelWrite(RGB_LED_PIN, 0, 20, 0);  // green = booting
 
-  if (!imu.begin_SPI(IMU_CS, SPI_SCK, SPI_MISO, SPI_MOSI)) {
-    Serial.println("ERROR: LSM6DSOX not found. Check wiring and SPI jumper on breakout.");
+  if (!imu::init()) {
+    Serial.println("FATAL: LSM6DSOX not found. Check wiring and SPI jumper.");
     neopixelWrite(RGB_LED_PIN, 80, 0, 0);
     while (1) { delay(100); }
   }
-  Serial.println("LSM6DSOX found");
-  neopixelWrite(RGB_LED_PIN, 0, 0, 20);
+  Serial.println("LSM6DSOX OK");
 
-  imu.setAccelRange(LSM6DS_ACCEL_RANGE_16_G);
-  imu.setGyroRange(LSM6DS_GYRO_RANGE_2000_DPS);
-  imu.setAccelDataRate(LSM6DS_RATE_104_HZ);
-  imu.setGyroDataRate(LSM6DS_RATE_104_HZ);
+  gpsAvailable = gps::init();
+  Serial.println(gpsAvailable ? "SAM-M8Q OK" : "SAM-M8Q absent — running without GPS");
 
-  configureFifo();
-
-  // Tell the chip to route its FIFO watermark flag to the INT1 pin. Bit 3 of
-  // INT1_CTRL is INT1_FIFO_TH. Default polarity is active-high, push-pull —
-  // we don't need to touch CTRL3_C to invert or open-drain anything.
-  imu.writeReg(REG_INT1_CTRL, 0x08);
-
-  // Wire the ESP32 GPIO and attach our ISR. RISING edge means we get one ISR
-  // call when the FIFO crosses the threshold; the pin then stays high until
-  // we drain below the watermark, at which point it falls and re-arms.
-  pinMode(IMU_INT1, INPUT);
-  attachInterrupt(digitalPinToInterrupt(IMU_INT1), onFifoWatermark, RISING);
-
-  Serial.println("FIFO + IRQ configured. Columns: drained  ax ay az (m/s2)  gx gy gz (rad/s)");
+  neopixelWrite(RGB_LED_PIN, 0, 0, 20);  // blue = running
+  Serial.println("Columns:");
+  Serial.println("  IMU:\tax ay az (m/s^2)  gx gy gz (rad/s)");
+  Serial.println("  GPS:\tfix sats lat lon alt(m) speed(m/s)");
 }
 
 void loop() {
-  // The whole loop is now event-driven: nothing happens until the chip says
-  // "I have data." This is the practical win of the interrupt — no polling,
-  // no jitter, no guesswork about when to drain.
-  if (fifoReady) {
-    // Clear the flag BEFORE we drain. If a new watermark fires while we're
-    // mid-drain, the ISR re-sets the flag and we'll catch it next iteration.
-    // (Clearing AFTER would race: an IRQ between drain and clear gets lost.)
-    fifoReady = false;
-
-    // Drain in a loop until the FIFO is empty. Normally one pass is enough,
-    // but if more samples arrived while we were busy this catches them too.
-    // drainFifo() returns 0 when the FIFO is empty.
-    while (drainFifo() > 0) { }
+  // --- IMU: drain whenever the FIFO watermark IRQ has fired ---
+  if (imu::update()) {
+    // Throttle prints to ~20 Hz so the serial output stays readable. The
+    // FIFO itself batches at 104 Hz; the underlying data isn't lost, we
+    // just don't print every burst.
+    if (millis() - lastImuPrint >= 50) {
+      lastImuPrint = millis();
+      Serial.print("IMU:\t");
+      Serial.print(imu::ax(), 3); Serial.print('\t');
+      Serial.print(imu::ay(), 3); Serial.print('\t');
+      Serial.print(imu::az(), 3); Serial.print('\t');
+      Serial.print(imu::gx(), 4); Serial.print('\t');
+      Serial.print(imu::gy(), 4); Serial.print('\t');
+      Serial.println(imu::gz(), 4);
+    }
   }
 
-  // Yield briefly so FreeRTOS can run its housekeeping tasks (WiFi, watchdog,
-  // etc.). delay(1) is the idiomatic Arduino-on-ESP32 way to say "I'm idle."
+  // --- GPS: poll at the module's nav rate, non-blocking ---
+  if (gpsAvailable && gps::update()) {
+    if (millis() - lastGpsPrint >= 1000) {
+      lastGpsPrint = millis();
+      Serial.print("GPS:\t");
+      Serial.print(gps::fixType());          Serial.print('\t');
+      Serial.print(gps::numSats());          Serial.print('\t');
+      Serial.print(gps::latitude(),     7);  Serial.print('\t');
+      Serial.print(gps::longitude(),    7);  Serial.print('\t');
+      Serial.print(gps::altitudeMSL(),  1);  Serial.print('\t');
+      Serial.println(gps::groundSpeed(), 2);
+    }
+  }
+
+  // Yield briefly so FreeRTOS can run its housekeeping tasks.
   delay(1);
 }
