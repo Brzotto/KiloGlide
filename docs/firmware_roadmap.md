@@ -69,7 +69,7 @@ KiloGlide/
 - [x] Write fake_imu.py — synthetic 416 Hz IMU data with stroke patterns
 - [x] Write analyze_session.py — stroke detection, asymmetry, fatigue analysis
 - [x] Set up Python environment (numpy, matplotlib)
-- [ ] Write log_format.h and log_format.md — binary record spec
+- [x] Write log_format.h and log_format.md — binary record spec
 - [ ] Write binary log_reader.py (currently using CSV; binary comes with Wave 2)
 
 ---
