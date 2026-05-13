@@ -1,4 +1,4 @@
-// gps.h — u-blox SAM-M8Q GNSS driver.
+// gps.h — u-blox SAM-M10Q GNSS driver.
 //
 // Public interface for the GPS module. UBX-only, I2C/Qwiic transport. Polling
 // is rate-limited internally (1 Hz for now, 5 Hz in Wave 2) so callers can
