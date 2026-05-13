@@ -12,9 +12,9 @@ Wave 2 in progress: GPS bringup done, SD card next.
 ## Hardware
 
 - MCU: ESP32-S3-DevKitC-1 (N8R8 — 8MB flash, 8MB PSRAM)
-- IMU: Adafruit LSM6DSOX breakout (SPI on SPI2, CS = GPIO 10)
-- GPS: SparkFun SAM-M10Q (I2C, SDA = GPIO 8, SCL = GPIO 9)
-- Display: Adafruit SHARP Memory Display 2.7" 400x240 (SPI2, shared with IMU, different CS)
+- IMU: Adafruit LSM6DSOX breakout (SPI on SPI2, CS = GPIO 10) (app note: https://www.allaboutcircuits.com/uploads/articles/lsm6dsox-machine-learning-core-stmicroelectronics_compressed.pdf)
+- GPS: SparkFun SAM-M10Q (I2C, SDA = GPIO 8, SCL = GPIO 9) (app note: https://content.u-blox.com/sites/default/files/documents/SAM-M10Q_IntegrationManual_UBX-22020019.pdf)
+- Display: Adafruit SHARP Memory Display 2.7" 400x240 (SPI2, shared with IMU, different CS)  (app note: https://www.adafruit.com/product/4694)
 - Storage: Adafruit microSD breakout (SPI3, SCK=GPIO 6, MOSI=GPIO 7, MISO=GPIO 14, CS=GPIO 5)
 - Power: Adafruit bq25185 charger + 2000 mAh LiPo
 - Case: Custom waterproof case (in development)
