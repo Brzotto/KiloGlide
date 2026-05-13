@@ -38,7 +38,7 @@ Running log of project decisions and reasoning. Update this when decisions chang
 
 ### Hardware changes from original BOM
 
-- **GPS: SAM-M10Q → SAM-M8Q.** Velocity accuracy identical (0.05 m/s), which is the spec that matters for sub-stroke analysis. Slightly worse position accuracy (2.5m vs 1.5m) and ~30% higher power draw, both acceptable. Same I2C interface, same library.
+- **GPS: SAM-M10Q.** Velocity accuracy identical (0.05 m/s), which is the spec that matters for sub-stroke analysis. 1.5m accuracy. Sparkfun I2C interface.
 - **Display breakout: Kuzyatech → Adafruit (PID 4694).** Same display panel, same SPI interface, built-in boost converter. Better library support — Adafruit's library is written for this exact board.
 - **Battery: 1200 mAh → 2000 mAh.** More runtime headroom. Still needs bench verification for 4+ hour target.
 - **Case: Pelican 1010 → Custom waterproof case.** Collaborator developing custom case. Allows PCB-first design (case fits board, not board fits case). Keep Pelican as fallback.
