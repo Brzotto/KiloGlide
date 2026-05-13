@@ -26,7 +26,7 @@ Running log of project decisions and reasoning. Update this when decisions chang
 |---|---|---|
 | MCU | ESP32-S3-DevKitC-1 N8R8 | WiFi + BLE + 8MB PSRAM, extensive library support |
 | IMU | Adafruit LSM6DSOX (PID 4438) | Available, SPI/I2C, library-swap to ICM-42688-P later if needed |
-| GPS | SparkFun SAM-M8Q | Built-in patch antenna, I2C, same library as M10Q. Velocity accuracy 0.05 m/s (identical to M10Q) |
+| GPS | SparkFun SAM-M10Q | Built-in patch antenna, I2C. Velocity accuracy 0.05 m/s (identical to M10Q) |
 | Display (breadboard) | Adafruit SHARP Memory Display Breakout 2.7" 400x240 (PID 4694) | Sunlight readable, SPI, built-in boost converter. Adafruit's library written for this exact board |
 | Display (production) | JDI LPM027M128C color MIP w/ frontlight | Adds color + dawn/dusk visibility, same SPI protocol family |
 | Storage | Adafruit microSD breakout (PID 4682, NOT 254) | 3V-only matches ESP32 directly, supports SPI and SDIO |
