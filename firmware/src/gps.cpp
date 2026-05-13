@@ -1,4 +1,4 @@
-// gps.cpp — SAM-M8Q driver implementation.
+// gps.cpp — SAM-M10Q driver implementation.
 //
 // I2C/Qwiic transport, UBX binary protocol. All hardware specifics live here;
 // callers see only the interface in gps.h.
