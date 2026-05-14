@@ -26,6 +26,11 @@ static uint32_t imuSamplesThisSec = 0;
 static uint32_t gpsUpdatesThisSec = 0;
 static unsigned long lastStatusPrint = 0;
 
+// --- LED mark flash (non-blocking) ---
+static unsigned long markFlashStart = 0;
+static bool markFlashing = false;
+constexpr unsigned long MARK_FLASH_MS = 100;
+
 // --- Logger flush timer ---
 static unsigned long lastFlush = 0;
 constexpr unsigned long FLUSH_INTERVAL_MS = 2000;
@@ -91,10 +96,19 @@ void loop() {
   if (act == button::SHORT) {
     if (logger::isActive()) {
       logger::writeMark();
+      led::mark();
+      markFlashStart = millis();
+      markFlashing = true;
       Serial.println("MARK recorded");
     } else {
       Serial.println("MARK ignored — no active session");
     }
+  }
+
+  // --- LED: restore green after mark flash ---
+  if (markFlashing && (millis() - markFlashStart >= MARK_FLASH_MS)) {
+    led::logging();
+    markFlashing = false;
   }
 
   // --- IMU: drain FIFO whenever the watermark IRQ has fired ---
