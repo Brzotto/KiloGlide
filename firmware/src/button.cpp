@@ -1,9 +1,15 @@
-// button.cpp — Debounced button with single/double press detection.
+// button.cpp — Debounced button with short/long press detection.
 //
 // Wiring: one side of the button to GPIO 1, other side to GND. The internal
 // pull-up holds the pin HIGH when the button is open; pressing it pulls LOW.
 // The Bounce2 library filters out the mechanical chatter (bouncing) that
 // happens in the first ~10-20 ms after a press or release.
+//
+// Detection logic:
+//   - On press-down (fell): record the time.
+//   - While held: if held ≥ LONG_PRESS_MS, fire LONG immediately and set a
+//     flag so we don't also fire SHORT on release.
+//   - On release (rose): if LONG didn't already fire, it was a SHORT press.
 
 #include "button.h"
 
@@ -14,11 +20,10 @@ namespace {
 
 constexpr uint8_t BUTTON_PIN = 1;
 
-// How long to wait after a first press before deciding it was a single press
-// (not the start of a double press). 600 ms is comfortable for a physical
-// tactile button — fast enough to feel responsive but forgiving enough that
-// you don't need to rush the second tap.
-constexpr unsigned long DOUBLE_PRESS_WINDOW_MS = 600;
+// How long you must hold the button before it counts as a long press.
+// 2 seconds is deliberate enough to prevent accidental session toggles
+// from bumps or splashes, but short enough that it doesn't feel sluggish.
+constexpr unsigned long LONG_PRESS_MS = 2000;
 
 // Bounce2 debounce interval. 25 ms filters typical tactile switch bounce
 // without making the button feel sluggish.
@@ -26,8 +31,9 @@ constexpr uint8_t DEBOUNCE_MS = 25;
 
 Bounce btn;
 
-uint8_t pressCount = 0;
-unsigned long firstPressTime = 0;
+unsigned long pressDownTime = 0;   // millis() when button was pressed down
+bool buttonHeld = false;           // true while the button is physically down
+bool longFired  = false;           // true if we already fired LONG for this press
 button::Action pendingAction = button::NONE;
 
 }  // namespace
@@ -45,24 +51,30 @@ void init() {
 void update() {
   btn.update();
 
-  // fell() = HIGH-to-LOW transition = button pressed (pull-up wiring).
+  // fell() = HIGH-to-LOW transition = button pressed down (pull-up wiring).
   if (btn.fell()) {
-    pressCount++;
-    if (pressCount == 1) {
-      firstPressTime = millis();
-    } else if (pressCount >= 2) {
-      // Two presses within the window → double press.
-      pendingAction = DOUBLE;
-      pressCount = 0;
-    }
+    pressDownTime = millis();
+    buttonHeld = true;
+    longFired = false;
   }
 
-  // If one press happened and the window has expired without a second,
-  // it's a single press.
-  if (pressCount == 1 &&
-      (millis() - firstPressTime) > DOUBLE_PRESS_WINDOW_MS) {
-    pendingAction = SINGLE;
-    pressCount = 0;
+  // While held, check if we've crossed the long-press threshold.
+  // Fire LONG as soon as we cross it — don't wait for release.
+  // This gives immediate feedback: the user holds the button, the LED
+  // changes after 2 seconds, and they know they can let go.
+  if (buttonHeld && !longFired &&
+      (millis() - pressDownTime) >= LONG_PRESS_MS) {
+    pendingAction = LONG;
+    longFired = true;
+  }
+
+  // rose() = LOW-to-HIGH transition = button released.
+  if (btn.rose()) {
+    // If long press didn't fire during the hold, it was a short press.
+    if (!longFired) {
+      pendingAction = SHORT;
+    }
+    buttonHeld = false;
   }
 }
 

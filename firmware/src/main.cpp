@@ -23,6 +23,7 @@ static bool sdAvailable  = false;
 
 // --- Status reporting (serial) ---
 static uint32_t imuSamplesThisSec = 0;
+static uint32_t gpsUpdatesThisSec = 0;
 static unsigned long lastStatusPrint = 0;
 
 // --- Logger flush timer ---
@@ -66,19 +67,17 @@ void loop() {
   button::update();
   button::Action act = button::action();
 
-  if (act == button::SINGLE) {
+  // Long press (hold 2 s) → toggle session start/stop.
+  if (act == button::LONG) {
     if (logger::isActive()) {
-      // Stop the current session.
       logger::stop();
       led::standby();
       Serial.println("Session stopped — standby");
     } else if (sdAvailable) {
-      // Start a new session.
       if (logger::start()) {
         led::logging();
         lastFlush = millis();
       } else {
-        // File open failed — flash red briefly, return to standby.
         led::error();
         delay(500);
         led::standby();
@@ -88,8 +87,14 @@ void loop() {
     }
   }
 
-  if (act == button::DOUBLE && logger::isActive()) {
-    logger::writeMark();
+  // Short press (quick tap) → mark this moment.
+  if (act == button::SHORT) {
+    if (logger::isActive()) {
+      logger::writeMark();
+      Serial.println("MARK recorded");
+    } else {
+      Serial.println("MARK ignored — no active session");
+    }
   }
 
   // --- IMU: drain FIFO whenever the watermark IRQ has fired ---
@@ -104,6 +109,7 @@ void loop() {
 
   // --- GPS: poll for new fix ---
   if (gpsAvailable && gps::update()) {
+    gpsUpdatesThisSec++;
     if (logger::isActive()) {
       logger::writeGps();
     }
@@ -130,16 +136,20 @@ void loop() {
       Serial.print("  STANDBY");
     }
 
-    // GPS summary.
-    if (gpsAvailable && gps::fixType() >= 3) {
+    // GPS summary: show update rate so we can tell if data is actually flowing.
+    if (gpsAvailable) {
       Serial.print("  GPS: ");
+      Serial.print(gpsUpdatesThisSec);
+      Serial.print(" upd/s fix=");
+      Serial.print(gps::fixType());
+      Serial.print(" sats=");
       Serial.print(gps::numSats());
-      Serial.print(" sats");
     }
 
     Serial.println();
 
     imuSamplesThisSec = 0;
+    gpsUpdatesThisSec = 0;
     lastStatusPrint = millis();
   }
 
