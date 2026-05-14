@@ -15,9 +15,10 @@ namespace {
 constexpr uint8_t BUTTON_PIN = 1;
 
 // How long to wait after a first press before deciding it was a single press
-// (not the start of a double press). 400 ms is fast enough to feel responsive
-// but slow enough that two deliberate taps register as a double.
-constexpr unsigned long DOUBLE_PRESS_WINDOW_MS = 400;
+// (not the start of a double press). 600 ms is comfortable for a physical
+// tactile button — fast enough to feel responsive but forgiving enough that
+// you don't need to rush the second tap.
+constexpr unsigned long DOUBLE_PRESS_WINDOW_MS = 600;
 
 // Bounce2 debounce interval. 25 ms filters typical tactile switch bounce
 // without making the button feel sluggish.
