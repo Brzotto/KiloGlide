@@ -34,8 +34,10 @@ button::Action pendingAction = button::NONE;
 namespace button {
 
 void init() {
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  btn.attach(BUTTON_PIN);
+  // Pass the pin mode directly to Bounce2. If you call pinMode() separately
+  // and then attach(pin), Bounce2 overrides it with plain INPUT (no pull-up)
+  // and the pin floats.
+  btn.attach(BUTTON_PIN, INPUT_PULLUP);
   btn.interval(DEBOUNCE_MS);
 }
 
