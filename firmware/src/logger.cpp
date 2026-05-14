@@ -184,7 +184,11 @@ void writeImu(const imu::Sample* samples, uint16_t count) {
   float dtMs = 1000.0f / imu::ODR_HZ;
 
   for (uint16_t i = 0; i < count; i++) {
-    uint32_t ts = nowMs - (uint32_t)((count - 1 - i) * dtMs);
+    // Clamp to 0 if the backward offset exceeds nowMs (happens on the
+    // very first batch when the session has just started and nowMs is
+    // smaller than count * dtMs).
+    uint32_t offset = (uint32_t)((count - 1 - i) * dtMs);
+    uint32_t ts = (offset <= nowMs) ? (nowMs - offset) : 0;
     // imu::Sample and KgImuPayload have identical memory layout (both are
     // six packed int16s), so we can pass the Sample directly as payload.
     writeRecord(KG_REC_IMU, ts, &samples[i], sizeof(KgImuPayload));
