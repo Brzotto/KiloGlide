@@ -18,6 +18,7 @@ constexpr uint8_t PIN = 38;
 inline void error()   { neopixelWrite(PIN, 80, 0, 0); }
 inline void standby() { neopixelWrite(PIN, 0, 0, 20); }
 inline void logging() { neopixelWrite(PIN, 0, 20, 0); }
+inline void mark()    { neopixelWrite(PIN, 40, 40, 40); }  // white flash
 inline void off()     { neopixelWrite(PIN, 0, 0, 0); }
 
 }  // namespace led
