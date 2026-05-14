@@ -13,7 +13,13 @@
 #define RGB_LED_PIN 38
 
 static bool gpsAvailable = false;
-static unsigned long lastImuPrint = 0;
+
+// IMU verification counters. At 416 Hz we expect ~416 samples/sec. Printing
+// every sample would overwhelm serial (~40 KB/s of ASCII), so we count and
+// report once per second.
+static uint32_t imuSamplesThisSec = 0;
+static unsigned long lastImuReport = 0;
+
 static unsigned long lastGpsPrint = 0;
 
 void setup() {
@@ -28,33 +34,49 @@ void setup() {
     neopixelWrite(RGB_LED_PIN, 80, 0, 0);
     while (1) { delay(100); }
   }
-  Serial.println("LSM6DSOX OK");
+  Serial.println("LSM6DSOX OK — 416 Hz, FIFO watermark 208");
 
   gpsAvailable = gps::init();
-  Serial.println(gpsAvailable ? "SAM-M8Q OK" : "SAM-M8Q absent — running without GPS");
+  Serial.println(gpsAvailable ? "SAM-M10Q OK" : "SAM-M10Q absent — running without GPS");
 
   neopixelWrite(RGB_LED_PIN, 0, 0, 20);  // blue = running
-  Serial.println("Columns:");
-  Serial.println("  IMU:\tax ay az (m/s^2)  gx gy gz (rad/s)");
-  Serial.println("  GPS:\tfix sats lat lon alt(m) speed(m/s)");
+  Serial.println("IMU: reporting samples/sec + last sample each second");
+  Serial.println("GPS: fix sats lat lon alt(m) speed(m/s)");
+
+  lastImuReport = millis();
 }
 
 void loop() {
   // --- IMU: drain whenever the FIFO watermark IRQ has fired ---
   if (imu::update()) {
-    // Throttle prints to ~20 Hz so the serial output stays readable. The
-    // FIFO itself batches at 104 Hz; the underlying data isn't lost, we
-    // just don't print every burst.
-    if (millis() - lastImuPrint >= 50) {
-      lastImuPrint = millis();
-      Serial.print("IMU:\t");
-      Serial.print(imu::ax(), 3); Serial.print('\t');
-      Serial.print(imu::ay(), 3); Serial.print('\t');
-      Serial.print(imu::az(), 3); Serial.print('\t');
-      Serial.print(imu::gx(), 4); Serial.print('\t');
-      Serial.print(imu::gy(), 4); Serial.print('\t');
-      Serial.println(imu::gz(), 4);
+    // Walk the sample array. For now we just count; the logger (next PR)
+    // will write each sample to SD here.
+    imuSamplesThisSec += imu::count();
+  }
+
+  // Once per second: report sample rate and print the last sample as a
+  // sanity check. Expect ~416 samples/sec if the ODR and FIFO are correct.
+  if (millis() - lastImuReport >= 1000) {
+    Serial.print("IMU:\t");
+    Serial.print(imuSamplesThisSec);
+    Serial.print(" samp/s");
+
+    // Print the last sample from the most recent batch (if any) so we can
+    // eyeball that accel/gyro values look physically reasonable.
+    if (imu::count() > 0) {
+      const imu::Sample& s = imu::samples()[imu::count() - 1];
+      Serial.print("\t last: ");
+      Serial.print(s.accelX(), 2); Serial.print(' ');
+      Serial.print(s.accelY(), 2); Serial.print(' ');
+      Serial.print(s.accelZ(), 2); Serial.print("  g:");
+      Serial.print(s.gyroX(), 3);  Serial.print(' ');
+      Serial.print(s.gyroY(), 3);  Serial.print(' ');
+      Serial.print(s.gyroZ(), 3);
     }
+    Serial.println();
+
+    imuSamplesThisSec = 0;
+    lastImuReport = millis();
   }
 
   // --- GPS: poll at the module's nav rate, non-blocking ---
