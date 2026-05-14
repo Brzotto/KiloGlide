@@ -257,18 +257,17 @@ Per-record overhead: 9 bytes (8 B header + 1 B CRC).
 
 | Source | Rate | Record size | Throughput |
 |---|---|---|---|
-| IMU | 104 Hz | 21 B | 2.18 KB/s |
+| IMU | 416 Hz | 21 B | 8.74 KB/s |
 | GPS | 1 Hz (5 Hz later) | 33 B | 33 B/s → 165 B/s |
 | Battery | 0.033 Hz | 13 B | 0.4 B/s |
 | Events / time | very rare | varies | negligible |
 
-Session total at 1 Hz GPS: ~2.2 KB/s, ~7.9 MB/hour. A 32 GB card holds ~4000 hours of data. SD writes are not the bottleneck.
+Session total at 1 Hz GPS: ~8.8 KB/s, ~31.7 MB/hour. A 32 GB card holds ~1000 hours of data. SD writes are not the bottleneck.
 
 ---
 
 ## Open questions / known limitations for v1
 
-- **One IMU sample per `imu::update()` cycle, not per FIFO entry.** The current `imu` module only exposes the most-recent sample after a drain. Real analysis wants every 104 Hz sample. Fix is a future change to `imu.{h,cpp}` to expose the full FIFO drain — the log format already supports this rate.
 - **No checksum on the file header.** Header is short enough to eyeball; if it's corrupt, the file is unrecoverable anyway.
 - **No file-level total CRC.** Per-record CRC8 is sufficient for the failure modes we expect (single-record SD write tears).
 - **No record-type for display state or UI events.** Add when needed (UI is Wave 4).
