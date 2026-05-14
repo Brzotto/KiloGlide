@@ -15,9 +15,9 @@ namespace {
 constexpr uint8_t GPS_SDA = 8;
 constexpr uint8_t GPS_SCL = 9;
 
-// Navigation rate. 1 Hz is fine for bringup; bump to 5 Hz when we start
-// logging real sessions in Wave 2.
-constexpr uint8_t NAV_RATE_HZ = 1;
+// Navigation rate. 5 Hz gives ~6 speed readings per stroke at 50 spm,
+// enough to see speed pulse shape and anchor IMU-integrated velocity.
+constexpr uint8_t NAV_RATE_HZ = 5;
 
 SFE_UBLOX_GNSS dev;
 

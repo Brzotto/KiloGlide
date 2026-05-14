@@ -258,11 +258,11 @@ Per-record overhead: 9 bytes (8 B header + 1 B CRC).
 | Source | Rate | Record size | Throughput |
 |---|---|---|---|
 | IMU | 416 Hz | 21 B | 8.74 KB/s |
-| GPS | 1 Hz (5 Hz later) | 33 B | 33 B/s → 165 B/s |
+| GPS | 5 Hz | 33 B | 165 B/s |
 | Battery | 0.033 Hz | 13 B | 0.4 B/s |
 | Events / time | very rare | varies | negligible |
 
-Session total at 1 Hz GPS: ~8.8 KB/s, ~31.7 MB/hour. A 32 GB card holds ~1000 hours of data. SD writes are not the bottleneck.
+Session total at 5 Hz GPS: ~8.9 KB/s, ~32.1 MB/hour. A 32 GB card holds ~1000 hours of data. SD writes are not the bottleneck.
 
 ---
 
