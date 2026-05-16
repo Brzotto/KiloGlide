@@ -1,13 +1,13 @@
 """Post-session calibration sanity check.
 
-Reads a binary session log and analyzes the first N seconds — assumed to
-be the dock-calibration segment when the device sat still — to extract:
+Reads a binary session log and analyzes the first N seconds - assumed to
+be the dock-calibration segment when the device sat still - to extract:
 
   - Gyro bias per axis (mean, what to subtract from later analysis)
   - Accel bias per axis (mean, mostly gravity)
-  - Accel magnitude (should be ~9.81 m/s^2 — anything else means scale error
+  - Accel magnitude (should be ~9.81 m/s^2 - anything else means scale error
     OR the still segment had real motion in it)
-  - Noise floor per axis (standard deviation — confirms the device was
+  - Noise floor per axis (standard deviation - confirms the device was
     actually still)
   - Which axis gravity is on (sanity-checks the mounting orientation)
 
@@ -86,7 +86,7 @@ def check_calibration(path, seconds=15.0, skip_leading=2.0):
     segment = [s for s in imu if start_ms <= s["ts"] <= end_ms]
     if len(segment) < 100:
         print(f"ERROR: only {len(segment)} IMU samples in [{skip_leading:.1f}s, "
-              f"{skip_leading + seconds:.1f}s] window — was the session long enough?")
+              f"{skip_leading + seconds:.1f}s] window - was the session long enough?")
         return False
 
     # Convert raw int16 to physical units.
@@ -107,7 +107,7 @@ def check_calibration(path, seconds=15.0, skip_leading=2.0):
     gx_mean, gy_mean, gz_mean = mean(gx_dps), mean(gy_dps), mean(gz_dps)
     gx_std,  gy_std,  gz_std  = stdev(gx_dps), stdev(gy_dps), stdev(gz_dps)
 
-    # Accel magnitude — sample-wise, then averaged. This is the right way to
+    # Accel magnitude - sample-wise, then averaged. This is the right way to
     # check sensor scale: a vector of length 9.81 will read 9.81 regardless of
     # how gravity is split across axes.
     mags = [math.sqrt(x*x + y*y + z*z) for x, y, z in zip(ax, ay, az)]
@@ -142,13 +142,13 @@ def check_calibration(path, seconds=15.0, skip_leading=2.0):
     print(f"    X: {gx_mean:+7.3f} deg/s  ({gx_mean * math.pi / 180.0:+8.5f} rad/s)")
     print(f"    Y: {gy_mean:+7.3f} deg/s  ({gy_mean * math.pi / 180.0:+8.5f} rad/s)")
     print(f"    Z: {gz_mean:+7.3f} deg/s  ({gz_mean * math.pi / 180.0:+8.5f} rad/s)")
-    print(f"    {status(gyro_bias_ok, f'>{GYRO_BIAS_WARN_DPS} deg/s — unusual at rest')}")
+    print(f"    {status(gyro_bias_ok, f'>{GYRO_BIAS_WARN_DPS} deg/s - unusual at rest')}")
     print()
-    print(f"  Gyro noise (per-axis stdev — confirms device was still):")
+    print(f"  Gyro noise (per-axis stdev - confirms device was still):")
     print(f"    X: {gx_std:.3f} deg/s")
     print(f"    Y: {gy_std:.3f} deg/s")
     print(f"    Z: {gz_std:.3f} deg/s")
-    print(f"    {status(gyro_noise_ok, f'>{GYRO_NOISE_WARN_DPS} deg/s — device was moving')}")
+    print(f"    {status(gyro_noise_ok, f'>{GYRO_NOISE_WARN_DPS} deg/s - device was moving')}")
     print()
 
     # Accel section
@@ -169,7 +169,7 @@ def check_calibration(path, seconds=15.0, skip_leading=2.0):
     print()
     print(f"  Accel noise (per-axis stdev):")
     print(f"    X: {ax_std:.3f}  Y: {ay_std:.3f}  Z: {az_std:.3f}  m/s^2")
-    print(f"    {status(accel_noise_ok, f'>{ACCEL_NOISE_WARN_MPS2} — device wasn\\'t still')}")
+    print(f"    {status(accel_noise_ok, f'>{ACCEL_NOISE_WARN_MPS2} - device was not still')}")
     print()
 
     # Mounting / axis inference
@@ -197,7 +197,7 @@ def main():
     p.add_argument("--seconds", type=float, default=15.0,
                    help="Length of still segment to analyze (default 15s)")
     p.add_argument("--skip-leading", type=float, default=2.0,
-                   help="Seconds to skip at session start (default 2s — covers "
+                   help="Seconds to skip at session start (default 2s - covers "
                         "button-press settling and initial hand motion)")
     args = p.parse_args()
 
