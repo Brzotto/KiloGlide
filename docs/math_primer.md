@@ -71,9 +71,19 @@ That's calculus on sampled data. Forward Euler integration. Engineers used it fo
 **The math:**
 
 ```python
-# alpha is the gyro weighting; typically 0.95–0.98
-# higher alpha = more gyro, more responsive but more drift
-# lower alpha = more accel, more stable but more noise
+# alpha is the gyro weighting. Higher alpha = more gyro (responsive,
+# drifts long-term); lower alpha = more accel (stable, noisier, vulnerable
+# to dynamic acceleration). Don't guess alpha — derive it from a time
+# constant tau (in seconds of "memory") and your sample period dt:
+#
+#     alpha = tau / (tau + dt)
+#
+# tau ~ 1 s is a good default for paddling: sub-second stroke events ride
+# through the gyro path without contaminating the slow gravity reference.
+# At your 416 Hz IMU rate (dt ≈ 0.0024 s):
+#     tau = 0.5 s  ->  alpha ≈ 0.9952
+#     tau = 1.0 s  ->  alpha ≈ 0.9976   <-- recommended starting value
+#     tau = 2.0 s  ->  alpha ≈ 0.9988
 
 roll = 0.0
 for sample in imu_stream:
@@ -90,7 +100,9 @@ For pitch, do the same thing with `gyro_y` and `atan2(accel_x, accel_z)`. Yaw ne
 
 **Watch out for:**
 
-- **Gravity contamination during high acceleration.** The accel measures gravity *plus* dynamic acceleration. During a hard stroke, the dynamic component is comparable to gravity, and the accel-based tilt estimate becomes unreliable. Mitigation: lower alpha (lean more on gyro) during high-acceleration moments. There's a fancy version called "adaptive alpha" that does this automatically.
+- **Sample-rate scaling.** Textbook alpha values like 0.95–0.98 assume ~50–100 Hz sampling. Carry those values to 416 Hz and the accel correction term becomes too aggressive (effective tau drops to ~0.1 s, so a single hard stroke leaks into the orientation estimate). Always re-derive alpha from `tau / (tau + dt)` when the sample rate changes.
+- **Gravity contamination during high acceleration.** The accel measures gravity *plus* dynamic acceleration. During a hard stroke, the dynamic component is comparable to gravity, and the accel-based tilt estimate becomes unreliable. Mitigation: lower alpha (lean more on gyro) during high-acceleration moments. The "adaptive alpha" variant does this automatically by detecting when `|accel|` strays from 9.81 and shortening the tau term-by-term.
+- **Gyro bias must be subtracted before integration.** A gyro reading "rest" output of even 0.5 °/s is normal, but integrate it for 60 seconds and you've fabricated a 30° roll. Capture a still segment (device motionless for ~20 s) at the start of every session and subtract the per-axis mean before running the filter. Bias drifts with temperature, so it's a per-session measurement, not a one-time calibration.
 - **Initial convergence.** The filter needs a few seconds to settle. Either run it for a moment before logging, or seed `roll` with the accel-only estimate at startup.
 
 ### 3. Peak detection (stroke counting v0)
