@@ -35,6 +35,18 @@ constexpr unsigned long MARK_FLASH_MS = 100;
 static unsigned long lastFlush = 0;
 constexpr unsigned long FLUSH_INTERVAL_MS = 2000;
 
+// --- GPS event tracking (per-session) ---
+// Reset on every session start. We need to know:
+//   - Have we written the initial TIME anchor yet?
+//   - What was the previous fix state, so we can detect transitions?
+//   - When did we last write a TIME anchor, so we can re-anchor periodically?
+static bool          timeAnchored      = false;
+static uint8_t       prevFixType       = 0;
+static unsigned long lastTimeAnchorMs  = 0;
+// Re-anchor every 5 minutes once we have valid time. Lets the parser detect
+// MCU clock drift over the course of a long session.
+constexpr unsigned long TIME_ANCHOR_INTERVAL_MS = 5UL * 60UL * 1000UL;
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -82,6 +94,11 @@ void loop() {
       if (logger::start()) {
         led::logging();
         lastFlush = millis();
+        // New session — reset GPS-tracking state so the first valid time
+        // and the first 3D fix this session get their own log records.
+        timeAnchored = false;
+        prevFixType = 0;
+        lastTimeAnchorMs = 0;
       } else {
         led::error();
         delay(500);
@@ -125,7 +142,34 @@ void loop() {
   if (gpsAvailable && gps::update()) {
     gpsUpdatesThisSec++;
     if (logger::isActive()) {
+      // 1. Always write the raw GPS PVT record.
       logger::writeGps();
+
+      // 2. Emit FIX_FOUND / FIX_LOST events on transitions across the 3D
+      //    threshold. Cheap one-byte events that let the parser mark
+      //    fix-quality changes without scanning every GPS record.
+      uint8_t curFix = gps::fixType();
+      bool was3D = prevFixType >= 3;
+      bool now3D = curFix >= 3;
+      if (now3D && !was3D)  logger::writeFixEvent(true);
+      if (!now3D && was3D)  logger::writeFixEvent(false);
+      prevFixType = curFix;
+
+      // 3. Write a TIME anchor the first moment we have valid UTC, and
+      //    again every TIME_ANCHOR_INTERVAL_MS afterward so the Python
+      //    parser can detect MCU clock drift over the session.
+      if (gps::hasValidTime()) {
+        uint64_t unix_us = gps::unixMicroseconds();
+        unsigned long now = millis();
+        if (!timeAnchored) {
+          logger::writeTimeAnchor(unix_us);
+          timeAnchored = true;
+          lastTimeAnchorMs = now;
+        } else if (now - lastTimeAnchorMs >= TIME_ANCHOR_INTERVAL_MS) {
+          logger::writeTimeAnchor(unix_us);
+          lastTimeAnchorMs = now;
+        }
+      }
     }
   }
 

@@ -222,6 +222,30 @@ void writeMark() {
   Serial.println("MARK");
 }
 
+void writeTimeAnchor(uint64_t unix_us) {
+  if (!active) return;
+
+  uint32_t local = sessionMs();
+  KgTimePayload tp = { local, unix_us };
+  writeRecord(KG_REC_TIME, local, &tp, sizeof(tp));
+  Serial.print("TIME anchor @ local_ms=");
+  Serial.print(local);
+  Serial.print("  unix_us=");
+  // Arduino Serial.print can't print uint64_t directly; split into upper/lower.
+  Serial.print((uint32_t)(unix_us >> 32), HEX);
+  Serial.print(":");
+  Serial.println((uint32_t)(unix_us & 0xFFFFFFFF), HEX);
+}
+
+void writeFixEvent(bool found) {
+  if (!active) return;
+
+  KgEventPayload evt = { found ? KG_EVT_GPS_FIX_FOUND : KG_EVT_GPS_FIX_LOST };
+  writeRecord(KG_REC_EVENT, sessionMs(), &evt, sizeof(evt));
+  Serial.print("FIX ");
+  Serial.println(found ? "found" : "lost");
+}
+
 void flush() {
   if (!active) return;
   file.flush();

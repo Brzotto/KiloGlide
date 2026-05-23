@@ -22,12 +22,14 @@ constexpr uint8_t NAV_RATE_HZ = 5;
 SFE_UBLOX_GNSS dev;
 
 // Most-recent values, exposed through getters in gps.h.
-uint8_t g_fix     = 0;
-uint8_t g_sats    = 0;
-double  g_lat     = 0;
-double  g_lon     = 0;
-double  g_alt     = 0;
-double  g_speed   = 0;
+uint8_t  g_fix       = 0;
+uint8_t  g_sats      = 0;
+double   g_lat       = 0;
+double   g_lon       = 0;
+double   g_alt       = 0;
+double   g_speed     = 0;
+bool     g_timeValid = false;
+uint64_t g_unix_us   = 0;
 
 }  // namespace
 
@@ -61,14 +63,30 @@ bool update() {
   g_lon   = dev.getLongitude()    / 1e7;
   g_alt   = dev.getAltitudeMSL() / 1000.0;
   g_speed = dev.getGroundSpeed() / 1000.0;
+
+  // UTC time validity. GPS modules typically get a position fix before they
+  // can decode the full time-of-week + week-number needed for absolute time,
+  // so we check both date and time validity flags explicitly.
+  g_timeValid = dev.getDateValid() && dev.getTimeValid();
+  if (g_timeValid) {
+    uint32_t micros = 0;
+    uint32_t unix_s = dev.getUnixEpoch(micros);
+    // Combine seconds + microseconds into Unix µs. uint64_t arithmetic is
+    // mandatory: unix_s * 1e6 overflows uint32_t.
+    g_unix_us = (uint64_t)unix_s * 1000000ULL + (uint64_t)micros;
+  } else {
+    g_unix_us = 0;
+  }
   return true;
 }
 
-uint8_t fixType()     { return g_fix; }
-uint8_t numSats()     { return g_sats; }
-double  latitude()    { return g_lat; }
-double  longitude()   { return g_lon; }
-double  altitudeMSL() { return g_alt; }
-double  groundSpeed() { return g_speed; }
+uint8_t  fixType()           { return g_fix; }
+uint8_t  numSats()           { return g_sats; }
+double   latitude()          { return g_lat; }
+double   longitude()         { return g_lon; }
+double   altitudeMSL()       { return g_alt; }
+double   groundSpeed()       { return g_speed; }
+bool     hasValidTime()      { return g_timeValid; }
+uint64_t unixMicroseconds()  { return g_unix_us; }
 
 }  // namespace gps

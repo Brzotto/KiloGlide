@@ -52,6 +52,19 @@ void writeGps();
 // No-op if no session is active.
 void writeMark();
 
+// Write a TIME record anchoring the current local timestamp (ms since session
+// start) to an absolute Unix microsecond time. The first anchor lets the
+// Python parser convert every other record's local_ms to absolute UTC; later
+// anchors let the parser detect MCU clock drift over a session.
+// No-op if no session is active.
+void writeTimeAnchor(uint64_t unix_us);
+
+// Write a GPS fix-state event. Pass true when the fix transitions from <3D
+// to 3D, false when it drops below 3D. Helps the analysis pipeline ignore
+// no-fix portions of GPS records without scanning every record.
+// No-op if no session is active.
+void writeFixEvent(bool found);
+
 // Force any buffered data to the SD card. Call every 1-2 seconds while
 // logging. Skipping this risks losing the tail of a session on power loss.
 // No-op if no session is active.
