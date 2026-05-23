@@ -74,7 +74,9 @@ USB-C → bq25185 → 3.3V to ESP32 + peripherals. LCD gets raw LiPo voltage and
 - **SD library:** SdFat (Bill Greiman), not stock SD library
 - **Orientation filter:** complementary filter. Not Kalman (overkill), not Madgwick (unnecessary for v0). Upgrade to Madgwick later if needed.
 - **Session lifecycle:** file = session. Start on button press (not motion-detect for v0). End on button press or idle timeout.
-- **Log format:** binary with sync bytes and CRC8. Magic number 0x4B494C47 ('KILG'). See firmware_roadmap.md for full spec.
+- **Log format:** binary with sync bytes and CRC8. Magic number 0x474C494B ('KILG' as little-endian ASCII). See `docs/log_format.md` for the full spec and `firmware/src/log_format.h` for the C structs.
+- **Absolute time anchoring:** firmware writes a `KG_REC_TIME` record the first GPS PVT update with `getDateValid() && getTimeValid()`, then every 5 minutes for clock-drift detection. The first water test (session 37) had no TIME anchors because this feature came later; future sessions don't need GPS-speed cross-correlation to align with absolute time.
+- **Fix-state events:** firmware emits `KG_EVT_GPS_FIX_FOUND` / `KG_EVT_GPS_FIX_LOST` on transitions across the 3D fix threshold. Lets the parser quickly find the first and last 3D-fix moments without scanning every GPS record.
 
 ---
 
@@ -86,8 +88,9 @@ USB-C → bq25185 → 3.3V to ESP32 + peripherals. LCD gets raw LiPo voltage and
 - **TSP (True Stroke Power) / corrected DPS:** demoted to offline-only for v1. Develop in Python against logged data. Too risky to claim on-device without validation.
 - **On-water display:** maximum 1-2 real-time metrics. Cadence + corrected DPS. Momentum curve as a glanceable shape.
 - **Post-session review is the actual product.** Device is the sensor; post-session view is the coach.
-- **Stroke detection:** peak detection with threshold + hysteresis + refractory period. IMU accel-z as primary signal. Forward acceleration zero-crossing as exit marker (more robust than roll reversal due to hip-induced roll noise).
-- **Side classification:** roll velocity sign, but acknowledge contamination from hip movement. Validate on real water data.
+- **Stroke detection:** scipy.signal.find_peaks on a Butterworth-band-passed (0.5-3 Hz) forward acceleration channel, with both prominence and absolute-height thresholds + a refractory period derived from a max-cadence cap (~150 spm). Forward acceleration zero-crossing remains the exit marker.
+- **Side classification (per-burst / per-lap, robust):** sign of the slow yaw envelope — band-pass yaw rate at 0.02-0.15 Hz, then sample at the catch or aggregate fraction-of-time-on-each-side over the lap. Reliable on OC1 in choppy water.
+- **Side classification (per-stroke, marginal):** yaw-rate integral over `[catch, catch+300ms]`, with a hysteresis filter (k=3) to suppress isolated noise flips. Acceptable in clean conditions; noisy in chop. Roll rate (the original v0 plan) does NOT work for OC1 — the ama suppresses roll. See `analysis/session_37_status_and_next_session.md` for the diagnostic plots.
 - **Force curve display:** boat-frame acceleration vs stroke phase (0-100%). Call it "effective drive force" not "paddle force." Add boat-distance-traveled view later using GPS velocity integration.
 - **No ML/inference on device.** Hand-engineered features are the right tool. Narrative coaching belongs in a cloud API or phone app, not on the ESP32.
 - **App architecture (future):** device logs to SD → transfer to phone/PC → analysis pipeline → visualization. No real-time device-to-phone connection during sessions. Device is self-contained on the water.
@@ -144,9 +147,9 @@ NK can't respond quickly — they'd need a board redesign to add a gyroscope. Th
 
 | Wave | Contents | Cost | Status |
 |---|---|---|---|
-| 1 | ESP32 DevKit, IMU breakout, perfboard, headers, hookup wire, USB-C | ~$60 | Hardware arrived |
-| 2 | GPS, microSD breakout + cards | ~$45 | |
-| 3 | Sharp LCD + Adafruit breakout, bq25185 charger, LiPo battery | ~$70 | |
-| 4 | Buttons, LEDs, resistors, case, NK mount, VHB | ~$60 | |
+| 1 | ESP32 DevKit, IMU breakout, perfboard, headers, hookup wire, USB-C | ~$60 | Complete — IMU at 416 Hz via FIFO/IRQ |
+| 2 | GPS, microSD breakout + cards | ~$45 | Complete — first water test 2026-05-21, session 37 |
+| 3 | Sharp LCD + Adafruit breakout, bq25185 charger, LiPo battery | ~$70 | Not yet on bench |
+| 4 | Buttons, LEDs, resistors, case, NK mount, VHB | ~$60 | Button + LED already wired (using whatever was in box) |
 
 Total: ~$235
