@@ -98,6 +98,7 @@ def load_kg(path):
         "gps_lon": lon[good],
         "gps_sats": sats[good],
         "events": events,
+        "time_records": result["records"]["time"],
         "header": result["header"],
     }
 
@@ -216,23 +217,17 @@ def _resample_uniform(t, y, t_grid):
     return np.interp(t_grid, t, y, left=0.0, right=0.0)
 
 
-def align_kg_to_garmin(kg, tcx, max_search_s=1500.0, dt_s=1.0):
+def _xcorr_alignment(kg, tcx, max_search_s=1500.0, dt_s=1.0):
     """
     Cross-correlate KG GPS speed and Garmin GPS speed to find the offset.
 
     Uses NORMALIZED Pearson cross-correlation at each lag (not raw dot product).
-    Raw dot product is biased: longer overlap windows score higher; demeaned
-    pre-paddling KG samples become slightly negative and inflate the score at
-    short lags. Pearson r at each lag removes both biases.
-
-    Returns kg_t0_utc — the absolute UTC timestamp (seconds since epoch) of KG t=0.
+    Returns (kg_t0_utc, offset_s, best_r, fallback_used, extras_dict).
     """
-    # KG signal on a uniform KG-local grid
     kg_dur = float(kg["gps_t"].max())
     kg_grid_local = np.arange(0.0, kg_dur, dt_s)
     kg_speed_u = _resample_uniform(kg["gps_t"], kg["gps_speed"], kg_grid_local)
 
-    # Garmin signal on a uniform local grid (0 .. duration), to be slid in time
     garmin_t0 = float(tcx["t"][0])
     garmin_dur = float(tcx["t"][-1] - tcx["t"][0])
     garmin_grid_local = np.arange(0.0, garmin_dur, dt_s)
@@ -244,14 +239,12 @@ def align_kg_to_garmin(kg, tcx, max_search_s=1500.0, dt_s=1.0):
     n_b = len(b)
     n_lags = int(max_search_s / dt_s)
 
-    # For each candidate offset k (in samples), compute Pearson r between
-    # a[k:k+min(n_b, n_a-k)] and b[:min(...)] using a normalized form.
     lags = []
     scores = []
     for k in range(0, n_lags + 1):
         end = min(k + n_b, n_a)
         usable = end - k
-        if usable < int(120 / dt_s):  # need >= 2 minutes of overlap to be meaningful
+        if usable < int(120 / dt_s):
             break
         a_w = a[k:end]
         b_w = b[:usable]
@@ -273,8 +266,6 @@ def align_kg_to_garmin(kg, tcx, max_search_s=1500.0, dt_s=1.0):
     best_offset = float(lags[best_idx])
     best_r = float(scores[best_idx])
 
-    # Sanity check: if best_r is poor, fall back to duration-difference alignment
-    # (KG started before Garmin; they end ~together at the dock).
     duration_diff = kg_dur - garmin_dur
     fallback_used = False
     if best_r < 0.3 and duration_diff > 60:
@@ -283,13 +274,7 @@ def align_kg_to_garmin(kg, tcx, max_search_s=1500.0, dt_s=1.0):
 
     kg_t0_utc = garmin_t0 - best_offset
 
-    return {
-        "kg_t0_utc": kg_t0_utc,
-        "offset_s": best_offset,
-        "best_r": best_r,
-        "lags": lags,
-        "scores": scores,
-        "fallback_used": fallback_used,
+    extras = {
         "kg_grid_local": kg_grid_local,
         "kg_speed_u": kg_speed_u,
         "garmin_grid_local": garmin_grid_local,
@@ -297,6 +282,56 @@ def align_kg_to_garmin(kg, tcx, max_search_s=1500.0, dt_s=1.0):
         "garmin_t0_utc": garmin_t0,
         "kg_duration_s": kg_dur,
         "garmin_duration_s": garmin_dur,
+        "lags": lags,
+        "scores": scores,
+    }
+    return kg_t0_utc, best_offset, best_r, fallback_used, extras
+
+
+def align_kg_to_garmin(kg, tcx, max_search_s=1500.0, dt_s=1.0):
+    """
+    Determine kg_t0_utc — the absolute UTC epoch-seconds of KG local t=0.
+
+    If the log contains TIME records (firmware >= 2026-05-23), uses the first
+    one directly:  kg_t0_utc = unix_us/1e6 - local_ms/1e3.
+    Falls back to GPS-speed cross-correlation for older logs without TIME records.
+
+    Always runs cross-correlation so the diagnostic plot and validation r are
+    available regardless of alignment method.
+    """
+    # Always compute cross-correlation (needed for diagnostic plot + validation)
+    xcorr_t0, xcorr_offset, xcorr_r, xcorr_fallback, extras = \
+        _xcorr_alignment(kg, tcx, max_search_s, dt_s)
+
+    time_recs = kg.get("time_records", [])
+    if time_recs:
+        tr = time_recs[0]
+        # local_ms: millis since KG boot.  unix_us: microseconds since Unix epoch.
+        kg_t0_utc = tr["unix_us"] / 1e6 - tr["local_ms"] / 1e3
+        garmin_t0 = extras["garmin_t0_utc"]
+        offset_s = garmin_t0 - kg_t0_utc
+        method = "time_record"
+    else:
+        kg_t0_utc = xcorr_t0
+        offset_s = xcorr_offset
+        method = "xcorr"
+
+    return {
+        "kg_t0_utc": kg_t0_utc,
+        "offset_s": offset_s,
+        "best_r": xcorr_r,
+        "lags": extras["lags"],
+        "scores": extras["scores"],
+        "fallback_used": xcorr_fallback,
+        "alignment_method": method,
+        "xcorr_kg_t0_utc": xcorr_t0,
+        "kg_grid_local": extras["kg_grid_local"],
+        "kg_speed_u": extras["kg_speed_u"],
+        "garmin_grid_local": extras["garmin_grid_local"],
+        "garmin_speed_u": extras["garmin_speed_u"],
+        "garmin_t0_utc": extras["garmin_t0_utc"],
+        "kg_duration_s": extras["kg_duration_s"],
+        "garmin_duration_s": extras["garmin_duration_s"],
     }
 
 
@@ -1335,12 +1370,16 @@ def main():
     print(f"  Garmin trackpoints: {len(tcx['t']):,}")
     print(f"  Garmin laps: {len(tcx['laps'])}")
 
-    print("\nPhase 1 — Time alignment via GPS speed cross-correlation...")
+    print("\nPhase 1 — Time alignment...")
     align = align_kg_to_garmin(kg, tcx)
     kg_t0_iso = dt.datetime.fromtimestamp(align['kg_t0_utc'], tz=dt.timezone.utc).isoformat()
+    print(f"  Method: {align['alignment_method']}")
     print(f"  KG t=0 UTC: {kg_t0_iso}")
     print(f"  Garmin started at KG local t = {align['offset_s']:.1f} s ({align['offset_s']/60:.2f} min)")
-    print(f"  Best Pearson r: {align['best_r']:.3f}  (fallback={align['fallback_used']})")
+    print(f"  Cross-correlation Pearson r: {align['best_r']:.3f}")
+    if align['alignment_method'] == 'time_record':
+        delta = align['kg_t0_utc'] - align['xcorr_kg_t0_utc']
+        print(f"  TIME vs xcorr difference: {delta:+.1f} s (sanity check)")
     plot_alignment_diagnostic(align, os.path.join(PLOTS_DIR, "01_alignment_diagnostic.png"))
     plot_speed_overlay(kg, tcx, align, os.path.join(PLOTS_DIR, "01_speed_overlay.png"))
     plot_gps_track(kg, tcx, os.path.join(PLOTS_DIR, "01_gps_track.png"))
