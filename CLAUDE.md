@@ -7,7 +7,32 @@ Open-water paddling coach. ESP32-S3 + LSM6DSOX IMU + u-blox SAM-M8Q GPS + Sharp 
 ## Project status
 
 Wave 1 complete: IMU (LSM6DSOX) running with FIFO + watermark interrupt.
-Wave 2 in progress: GPS bringup done, SD card next.
+
+Wave 2 complete: GPS + microSD + button all working. Firmware writes:
+- IMU at 416 Hz (FIFO + watermark IRQ)
+- GPS PVT at 5 Hz with FIX_FOUND/FIX_LOST event transitions
+- TIME anchor (KG_REC_TIME) on first GPS UTC validity, then every 5 min for drift detection
+- USER_MARK events on single short button press
+- SESSION_START / SESSION_END events on long press
+
+First on-water test (session 37, 2026-05-21, Alameda Bay): 79 min, 1.94M IMU samples,
+zero CRC errors, clean log. Full analysis pipeline validated end-to-end against a paired
+Garmin TCX activity (cross-correlation r=0.94).
+
+Analysis pipeline (`analysis/` directory):
+- `correlate_kg_garmin.py` — primary pipeline (binary parse, time-align with Garmin, axis
+  auto-detect, stroke detection, per-lap summary, force curves)
+- `stroke_phases.py` — catch / pull / glide annotations + per-stroke quality ranking
+- `perg_plot.py` — Concept2-PM5-style individual stroke force curves
+- `bonus_visualizations.py` — DPS, heart rate, stroke evolution, summary dashboard
+- `lean_and_bursts.py` — boat lean angle + per-burst side analysis + spectral content
+- `side_envelope.py`, `side_rhythm.py`, `side_blocks.py` — L/R side discrimination
+
+Open issues:
+- Per-stroke L/R classification: noise-dominated in cruise water. Lap-level
+  side fraction from the slow yaw envelope is reliable. Future work: combine
+  yaw + lap-demeaned lateral for a per-stroke classifier.
+- Display + power (Wave 3) not yet on the bench.
 
 ## Hardware
 
@@ -53,3 +78,7 @@ When asked to write code:
 - docs/data_insights.md — data ideas and metrics
 - docs/math_primer.md — algorithm explanations
 - docs/developer_setup.md — environment setup guide
+- docs/log_format.md — binary log format spec (paired with firmware/src/log_format.h)
+- docs/harness.md — wiring reference
+- analysis/session_37_report.md — first water-test report
+- analysis/session_37_status_and_next_session.md — what's working and what's needed next

@@ -149,20 +149,27 @@ Sync bytes mean a corrupted region doesn't kill the whole file — the parser ca
 
 ---
 
-## Wave 2: + GPS + microSD
+## Wave 2: + GPS + microSD — COMPLETE
 
-**Hardware added:** SAM-M8Q GPS, microSD breakout + cards.
+**Hardware added:** SAM-M10Q GPS, microSD breakout + cards.
 
 This is where you have a working data logger. Get it on a boat.
 
 ### Goals
 
-1. microSD on **dedicated SPI3** (do not share — SD cards misbehave on shared buses). Pins: SCK=GPIO 6, MOSI=GPIO 7, MISO=GPIO 14, CS=GPIO 5. Use SdFat in `O_RDWR | O_CREAT | O_AT_END` mode with periodic `flush()` (every 1–5 seconds, not every record).
-2. Implement the binary log writer per `log_format.h`. Write IMU records at 416 Hz, GPS records at 5 Hz.
-3. GPS via I2C (SDA=GPIO 8, SCL=GPIO 9) using SparkFun u-blox library, UBX binary mode. Configure for 5 Hz updates, request PVT messages.
-4. Session lifecycle: file = session. Filename `kiloglide_<session_id>.bin`. **Start on button press for v0** (not motion-detect — false starts in gear bags). End on button press or idle timeout.
-5. Time-sync: at GPS first fix, write a MARK record with the GPS time → session-time-offset. Python parser uses this to convert microseconds-since-start to absolute time.
-6. **First water test.** Bag the breadboard in a ziploc, take it on a paddle, log everything. Don't try to display anything. Bring it home, parse the log, plot it. Celebrate.
+1. ~~microSD on **dedicated SPI3** (do not share — SD cards misbehave on shared buses). Pins: SCK=GPIO 6, MOSI=GPIO 7, MISO=GPIO 14, CS=GPIO 5. Use SdFat in `O_RDWR | O_CREAT | O_AT_END` mode with periodic `flush()` (every 1–5 seconds, not every record).~~ DONE
+2. ~~Implement the binary log writer per `log_format.h`. Write IMU records at 416 Hz, GPS records at 5 Hz.~~ DONE — see `firmware/src/logger.cpp`
+3. ~~GPS via I2C (SDA=GPIO 8, SCL=GPIO 9) using SparkFun u-blox library, UBX binary mode. Configure for 5 Hz updates, request PVT messages.~~ DONE — see `firmware/src/gps.cpp`
+4. ~~Session lifecycle: file = session. Filename `kg_NNNNNN.bin`. Start on long button press, end on long button press.~~ DONE
+5. ~~Time-sync: at GPS first fix, write a TIME record (KG_REC_TIME) anchoring local_ms to unix_us. Re-anchor every 5 minutes for drift detection.~~ DONE — `main.cpp` tracks `timeAnchored` state; `gps.cpp` exposes `hasValidTime()` and `unixMicroseconds()`; `logger.cpp` provides `writeTimeAnchor()`. Also emits `GPS_FIX_FOUND` / `GPS_FIX_LOST` events on transitions.
+6. ~~**First water test.** Bag the breadboard in a ziploc, take it on a paddle, log everything.~~ DONE — session 37, 2026-05-21, Alameda Bay. 79 min, 1.94M IMU samples, zero CRC errors. See `analysis/session_37_report.md`.
+
+### Lessons from session 37
+
+- IMU axis convention is fully recoverable from data: gravity (from a stationary or quasi-stationary window) gives "up"; PCA on horizontal accel + GPS dV/dt sign check gives "forward".
+- Effective forward force = system mass × forward accel is repeatable across a session. For session 37 (85 kg system) mean peak ~205 N on strong cruise miles.
+- Per-stroke L/R from gyro_x (roll) is unreliable on OC1 because the ama suppresses roll. Yaw rate (gyro_z) and the slow yaw envelope work much better; see `decisions.md`.
+- Cross-correlating GPS speed signals with Garmin TCX is solid for time alignment (r=0.94) when no TIME anchor exists. With the firmware change above, future sessions don't need this fallback.
 
 ### Watch out for
 

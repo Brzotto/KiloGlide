@@ -26,6 +26,10 @@ env/
 sessions/
 *.log
 
+# Staged session data and generated plots — regeneratable, not source
+analysis/data/
+analysis/plots/
+
 # OS metadata
 .DS_Store
 Thumbs.db

@@ -37,4 +37,13 @@ double  longitude();      // degrees
 double  altitudeMSL();    // meters
 double  groundSpeed();    // m/s
 
+// True if the most recent fix included valid UTC date and time. GPS modules
+// often have a position fix before they have time, and vice-versa, so callers
+// must check this explicitly before reading unixMicroseconds().
+bool hasValidTime();
+
+// Most recent UTC time as Unix microseconds (µs since 1970-01-01 00:00:00 UTC).
+// Returns 0 if hasValidTime() is false. Updated by update().
+uint64_t unixMicroseconds();
+
 }  // namespace gps
