@@ -119,3 +119,4 @@ Cadence of ~50 spm during the bursts suggests they were *hard* strokes rather th
 - `21_lap13_perg.png`
 - `21_lap2_vs_lap13.png`
 - `22_connected_strokes.png`
+- `23_chop_vs_connection.png`
