@@ -26,8 +26,10 @@ env/
 sessions/
 *.log
 
-# Staged session data and generated plots — regeneratable, not source
-analysis/data/
+# Staged session data and generated plots — regeneratable, not source.
+# sessions.json is config (tracked), but the raw .bin/.tcx files are user data.
+analysis/data/*
+!analysis/data/sessions.json
 analysis/plots/
 
 # OS metadata

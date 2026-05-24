@@ -1,0 +1,22 @@
+{
+  "default_session": 37,
+  "sessions": {
+    "37": {
+      "date": "2026-05-21",
+      "kg_file": "kg_000037.bin",
+      "garmin_tcx": "activity_22960598946.tcx",
+      "nk_speedcoach": null,
+      "location": "Alameda Bay, CA",
+      "boat": "OC1",
+      "system_mass_kg": 85,
+      "mount": "breadboard forward of seat",
+      "conditions": "mixed glass + chop, ~1.2 mph current",
+      "notes": "First on-water test. Wave 1 + Wave 2 firmware. No TIME records (pre-2026-05-23 firmware).",
+      "summary_narrative": [
+        "Current estimate ~1.2 mph each way (rough — assumes similar effort both directions). L2 ran 6.7 mph with current, L13 ran 4.3 mph against. Cadences matched (~48 spm) but force differed ~10% (46.4 vs 42.0 lbs), so part of the 2.4 mph gap is real effort variation, not just current. A drift test or NOAA tidal data would tighten this.",
+        "Connected stroke % drops in chop. Glass water L13 = 18%, choppy fast laps L2-3 = 6-9%. Same paddler, same cadence — water conditions disrupt catch timing.",
+        "Pull is brief (~0.45 s), glide is the dominant phase (~0.75 s). Higher cadence shrinks glide time, not pull time — there's less recovery to set up the next catch."
+      ]
+    }
+  }
+}

@@ -20,13 +20,20 @@ zero CRC errors, clean log. Full analysis pipeline validated end-to-end against 
 Garmin TCX activity (cross-correlation r=0.94).
 
 Analysis pipeline (`analysis/` directory):
+- `session_config.py` + `data/sessions.json` — multi-session manifest; scripts take `--session N`
 - `correlate_kg_garmin.py` — primary pipeline (binary parse, time-align with Garmin, axis
-  auto-detect, stroke detection, per-lap summary, force curves)
+  auto-detect, stroke detection, per-lap summary, force curves). TIME-record alignment when
+  available, falls back to GPS cross-correlation.
+- `coach_summary.py` — single-page coach summary with sport-familiar units (mph, lbs)
+- `glide_speed_test.py` — within-stroke speed integration + two-tier glide metrics
+  (IMU-only Tier 1 = current-independent; GPS-anchored Tier 2 = absolute speed context)
+- `precatch_signature.py` — averaged forward-accel signature revealing pre-catch body motion
 - `stroke_phases.py` — catch / pull / glide annotations + per-stroke quality ranking
 - `perg_plot.py` — Concept2-PM5-style individual stroke force curves
 - `bonus_visualizations.py` — DPS, heart rate, stroke evolution, summary dashboard
 - `lean_and_bursts.py` — boat lean angle + per-burst side analysis + spectral content
 - `side_envelope.py`, `side_rhythm.py`, `side_blocks.py` — L/R side discrimination
+- `connected_quick.py` — quick Connected % printout for spot-checks
 
 Open issues:
 - Per-stroke L/R classification: noise-dominated in cruise water. Lap-level
@@ -80,5 +87,8 @@ When asked to write code:
 - docs/developer_setup.md — environment setup guide
 - docs/log_format.md — binary log format spec (paired with firmware/src/log_format.h)
 - docs/harness.md — wiring reference
+- docs/README_analysis.md — how to run the analysis pipeline on a new session
+- docs/handoff_2026-05-23.md — handoff from the session 37 pipeline build
+- docs/handoff_2026-05-23_glide.md — handoff from the glide-analysis session
 - analysis/session_37_report.md — first water-test report
 - analysis/session_37_status_and_next_session.md — what's working and what's needed next
