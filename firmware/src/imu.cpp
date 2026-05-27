@@ -87,6 +87,17 @@ volatile bool fifoReady = false;
 imu::Sample sampleBuf[MAX_SAMPLES];
 uint16_t    sampleCount = 0;
 
+// Pairing state carries across FIFO bursts. A burst can end after an accel
+// entry but before the matching gyro entry (or vice versa), so these cannot be
+// local to drainBurst().
+int16_t pendingAx = 0, pendingAy = 0, pendingAz = 0;
+int16_t pendingGx = 0, pendingGy = 0, pendingGz = 0;
+bool havePendingAccel = false;
+bool havePendingGyro  = false;
+
+uint32_t droppedSampleCount = 0;
+uint32_t ignoredEntryCount = 0;
+
 // The ISR. Mark with IRAM_ATTR so it runs from instruction RAM (flash can be
 // unavailable mid-write). Keep it short — just flip a flag and return.
 void IRAM_ATTR onFifoWatermark() {
@@ -129,13 +140,6 @@ uint16_t drainBurst() {
   static uint8_t buf[MAX_BURST_ENTRIES * 7];
   dev.readBurst(REG_FIFO_DATA, buf, (size_t)toRead * 7);
 
-  // Temporaries for pairing. At equal BDR, accel and gyro entries alternate
-  // in the FIFO. We accumulate each half and emit a Sample when we have both.
-  int16_t ax = 0, ay = 0, az = 0;
-  int16_t gx = 0, gy = 0, gz = 0;
-  bool haveAccel = false;
-  bool haveGyro  = false;
-
   for (uint16_t i = 0; i < toRead; i++) {
     uint8_t* e = &buf[i * 7];
     uint8_t tag = (e[0] >> 3) & 0x1F;
@@ -144,26 +148,38 @@ uint16_t drainBurst() {
     int16_t z = (int16_t)(e[5] | ((uint16_t)e[6] << 8));
 
     if (tag == TAG_ACCEL) {
-      ax = x; ay = y; az = z;
-      haveAccel = true;
+      if (havePendingAccel && !havePendingGyro) {
+        ignoredEntryCount++;
+      }
+      pendingAx = x; pendingAy = y; pendingAz = z;
+      havePendingAccel = true;
     } else if (tag == TAG_GYRO) {
-      gx = x; gy = y; gz = z;
-      haveGyro = true;
+      if (havePendingGyro && !havePendingAccel) {
+        ignoredEntryCount++;
+      }
+      pendingGx = x; pendingGy = y; pendingGz = z;
+      havePendingGyro = true;
+    } else {
+      ignoredEntryCount++;
     }
 
     // Once we have both halves, emit a paired Sample.
-    if (haveAccel && haveGyro) {
+    if (havePendingAccel && havePendingGyro) {
       if (sampleCount < MAX_SAMPLES) {
-        sampleBuf[sampleCount] = { ax, ay, az, gx, gy, gz };
+        sampleBuf[sampleCount] = {
+          pendingAx, pendingAy, pendingAz,
+          pendingGx, pendingGy, pendingGz
+        };
         sampleCount++;
+      } else {
+        droppedSampleCount++;
       }
-      haveAccel = false;
-      haveGyro  = false;
+      havePendingAccel = false;
+      havePendingGyro  = false;
     }
   }
-  // If one half is left unpaired at the end of this burst, it's fine —
-  // the next burst will pick up its partner. (At equal BDR this almost
-  // never happens except at the edges of a burst boundary.)
+  // If one half is left unpaired, the pending state above preserves it for
+  // the next burst or update().
 
   return toRead;
 }
@@ -199,7 +215,9 @@ bool update() {
   // mid-drain, the ISR re-sets the flag and we'll catch it next iteration.
   fifoReady = false;
 
-  // Reset the sample buffer for this batch.
+  // Reset the output batch only. Pending half-pairs intentionally survive
+  // across update() calls: if a drain ends after accel but before gyro, the
+  // next FIFO drain can still complete that physical sample.
   sampleCount = 0;
 
   // Drain in bursts until the FIFO is empty.
@@ -210,5 +228,7 @@ bool update() {
 
 uint16_t count()          { return sampleCount; }
 const Sample* samples()   { return sampleBuf; }
+uint32_t droppedSamples() { return droppedSampleCount; }
+uint32_t ignoredFifoEntries() { return ignoredEntryCount; }
 
 }  // namespace imu

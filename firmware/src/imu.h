@@ -105,4 +105,11 @@ uint16_t count();
 // Valid until the next update() call — don't stash the pointer.
 const Sample* samples();
 
+// Diagnostics for field testing. These counters are cumulative since boot.
+// droppedSamples() increments when the FIFO drain produced more paired
+// samples than fit in the batch buffer.
+// ignoredFifoEntries() increments for unknown FIFO tags or orphaned half-pairs.
+uint32_t droppedSamples();
+uint32_t ignoredFifoEntries();
+
 }  // namespace imu

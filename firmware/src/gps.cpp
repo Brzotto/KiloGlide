@@ -44,12 +44,17 @@ bool init() {
 
   // UBX binary protocol — faster and more reliable than NMEA parsing.
   // Disable NMEA so we don't waste I2C bandwidth on sentences we ignore.
-  dev.setI2COutput(COM_TYPE_UBX);
-  dev.setNavigationFrequency(NAV_RATE_HZ);
+  bool configOk = true;
+  configOk &= dev.setI2COutput(COM_TYPE_UBX);
+  configOk &= dev.setNavigationFrequency(NAV_RATE_HZ);
 
   // Save the I/O port config to battery-backed RAM so it survives a power
   // cycle. (Coin cell on the breakout keeps this alive.)
-  dev.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
+  configOk &= dev.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
+
+  if (!configOk) {
+    Serial.println("WARN: GPS responded, but one or more config writes failed");
+  }
   return true;
 }
 

@@ -190,8 +190,19 @@ void loop() {
     if (logger::isActive()) {
       Serial.print("  LOG: session ");
       Serial.print(logger::sessionId());
+      if (logger::writeErrors() > 0) {
+        Serial.print(" wr_err=");
+        Serial.print(logger::writeErrors());
+      }
     } else {
       Serial.print("  STANDBY");
+    }
+
+    if (imu::droppedSamples() > 0 || imu::ignoredFifoEntries() > 0) {
+      Serial.print("  IMU_DIAG: drop=");
+      Serial.print(imu::droppedSamples());
+      Serial.print(" ign=");
+      Serial.print(imu::ignoredFifoEntries());
     }
 
     // GPS summary: show update rate so we can tell if data is actually flowing.

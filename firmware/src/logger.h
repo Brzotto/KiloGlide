@@ -80,4 +80,10 @@ bool isActive();
 // Current or most recent session ID. Zero before the first start().
 uint32_t sessionId();
 
+// Cumulative SD write diagnostics since boot. Nonzero writeErrors() means at
+// least one write or flush did not complete; bytesWritten() is useful for
+// sanity-checking expected log growth during bench tests.
+uint32_t writeErrors();
+uint32_t bytesWritten();
+
 }  // namespace logger

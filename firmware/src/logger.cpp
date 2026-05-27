@@ -44,6 +44,8 @@ bool active  = false;
 
 uint32_t currentSessionId  = 0;
 uint32_t sessionStartMs    = 0;   // millis() at session start
+uint32_t sdWriteErrors     = 0;
+uint32_t sdBytesWritten    = 0;
 
 // --- Helpers ---
 
@@ -80,7 +82,23 @@ uint32_t findNextSessionId() {
 // On-disk layout:
 //   [sync 2B] [type 1B] [length 1B] [timestamp 4B] [payload] [crc8 1B]
 //
-void writeRecord(uint8_t type, uint32_t timestamp,
+bool writeBytes(const uint8_t* data, size_t len) {
+  size_t written = file.write(data, len);
+  if (written != len) {
+    sdWriteErrors++;
+    Serial.print("ERROR: SD write short: ");
+    Serial.print(written);
+    Serial.print("/");
+    Serial.println(len);
+    file.clearWriteError();
+    return false;
+  }
+
+  sdBytesWritten += (uint32_t)written;
+  return true;
+}
+
+bool writeRecord(uint8_t type, uint32_t timestamp,
                  const void* payload, uint8_t payloadLen) {
   // Build header.
   KgRecordHeader hdr;
@@ -101,7 +119,7 @@ void writeRecord(uint8_t type, uint32_t timestamp,
   buf[sizeof(hdr) + payloadLen] = crc;
 
   // One write call for the complete record.
-  file.write(buf, sizeof(hdr) + payloadLen + 1);
+  return writeBytes(buf, sizeof(hdr) + payloadLen + 1);
 }
 
 }  // namespace
@@ -155,11 +173,17 @@ bool start() {
   hdr.hardware_id = KG_HARDWARE_BREADBOARD_V0;
   hdr.session_id  = currentSessionId;
   // start_unix_us left as 0 — a TIME record will anchor it once GPS has time.
-  file.write((const uint8_t*)&hdr, sizeof(hdr));
+  if (!writeBytes((const uint8_t*)&hdr, sizeof(hdr))) {
+    file.close();
+    return false;
+  }
 
   // Write SESSION_START event as the first record.
   KgEventPayload evt = { KG_EVT_SESSION_START };
-  writeRecord(KG_REC_EVENT, 0, &evt, sizeof(evt));
+  if (!writeRecord(KG_REC_EVENT, 0, &evt, sizeof(evt))) {
+    file.close();
+    return false;
+  }
 
   active = true;
 
@@ -249,6 +273,11 @@ void writeFixEvent(bool found) {
 void flush() {
   if (!active) return;
   file.flush();
+  if (file.getWriteError()) {
+    sdWriteErrors++;
+    Serial.println("ERROR: SD flush failed");
+    file.clearWriteError();
+  }
 }
 
 void stop() {
@@ -259,6 +288,11 @@ void stop() {
   writeRecord(KG_REC_EVENT, sessionMs(), &evt, sizeof(evt));
 
   file.flush();
+  if (file.getWriteError()) {
+    sdWriteErrors++;
+    Serial.println("ERROR: SD flush failed");
+    file.clearWriteError();
+  }
   file.close();
   active = false;
 
@@ -272,5 +306,7 @@ void stop() {
 
 bool isActive()       { return active; }
 uint32_t sessionId()  { return currentSessionId; }
+uint32_t writeErrors() { return sdWriteErrors; }
+uint32_t bytesWritten() { return sdBytesWritten; }
 
 }  // namespace logger
