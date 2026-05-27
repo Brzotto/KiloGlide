@@ -117,13 +117,21 @@ Python `struct` format: `<hhhhhh`
 | 4 | `lon` | i32 | × 1e-7 → degrees |
 | 8 | `alt_mm` | i32 | × 1e-3 → meters MSL |
 | 12 | `speed_mm_s` | u32 | × 1e-3 → m/s |
-| 16 | `heading_cd` | u16 | × 1e-2 → degrees |
+| 16 | `heading_cd` | u16 | × 1e-2 → degrees (course over ground) |
 | 18 | `fix_type` | u8 | 0 = none, 2 = 2D, 3 = 3D |
 | 19 | `num_sats` | u8 | |
 | 20 | `hdop_c` | u16 | × 1e-2 → unitless |
 | 22 | `reserved` | u16 | Zero. |
 
 Python `struct` format: `<iiiI H BB H H`
+
+> **Heading caveat.** `heading_cd` is the GPS course over ground (direction of
+> the velocity vector), not the boat's orientation. When the boat is moving
+> slowly (≲ 0.5 m/s), the velocity vector is tiny and the heading is
+> noise-dominated — values will jump around and may even reverse from sample
+> to sample. Analysis code that consumes heading should mask out (or
+> discount) samples where `speed_mm_s` is below a threshold (~500 mm/s is a
+> reasonable starting point). This is a property of GPS, not a firmware bug.
 
 ### Type 3 — Event (1-byte payload)
 

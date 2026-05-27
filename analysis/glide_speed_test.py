@@ -30,7 +30,7 @@ from correlate_kg_garmin import (
     load_kg, load_tcx, align_kg_to_garmin, detect_imu_axes,
     rotate_accel, detect_strokes, lap_local_window,
 )
-from session_config import get_session_from_args
+from session_config import get_session_from_args, get_compare_laps
 
 # Laps to exclude from cross-lap summaries (different stroke regime).
 # L14 = cool-down paddle to dock, very short dabs not full strokes.
@@ -172,6 +172,39 @@ def compute_glide_metrics(tt, a_fwd, strokes, gps_speed_at_imu=None):
     return results
 
 
+def lap_median_decay_rate(tt, a_fwd, strokes, min_dur=0.6, max_dur=2.0):
+    """Median glide-phase deceleration (m/s²) across all valid strokes in a lap.
+
+    Helper for callers that want the headline lap-level decay rate without
+    pulling in the full per-stroke metrics list. Same math as the per-stroke
+    `compute_glide_metrics` decay_rate, just aggregated.
+    """
+    decays = []
+    for i in range(len(strokes) - 1):
+        i0, i1 = strokes[i][1], strokes[i + 1][1]
+        if i1 - i0 < 20:
+            continue
+        seg_t = tt[i0:i1]
+        seg_a = a_fwd[i0:i1]
+        dur = seg_t[-1] - seg_t[0]
+        if dur < min_dur or dur > max_dur:
+            continue
+        dt_arr = np.diff(seg_t)
+        dv = np.cumsum(seg_a[:-1] * dt_arr)
+        dv = np.insert(dv, 0, 0.0)
+        peak_idx = int(np.argmax(dv))
+        if peak_idx >= len(dv) - 10:
+            continue
+        glide_t = seg_t[peak_idx:] - seg_t[peak_idx]
+        glide_dv = dv[peak_idx:]
+        if len(glide_t) <= 5:
+            continue
+        decays.append(float(np.polyfit(glide_t, glide_dv, 1)[0]))
+    if not decays:
+        return np.nan
+    return float(np.median(decays))
+
+
 def filter_strokes(strokes, min_dur=0.6, max_dur=2.0, min_pull_dv=0.05):
     """Remove outlier strokes using IMU-only criteria."""
     good = []
@@ -275,6 +308,13 @@ def main():
         print(f"  Lap {lap_idx:2d}: {len(raw):3d} strokes, {n_dropped:3d} filtered out, "
               f"{len(filtered):3d} clean{gps_str}")
 
+    # Pick the comparison laps from manifest or auto-fall-back to data.
+    # Used in the "key laps" overlay panels and the phase diagnostic.
+    per_lap_stats = {li: {"n_strokes": len(d["raw"]),
+                          "mean_speed_m_s": d["gps_mean_speed"]}
+                     for li, d in all_lap_data.items() if li not in EXCLUDE_LAPS}
+    compare = get_compare_laps(cfg, per_lap_stats)
+
     # ================================================================
     # PLOT 1: Tier 1 — IMU-only glide metrics across laps
     # ================================================================
@@ -309,8 +349,9 @@ def main():
         }
 
     laps_t1 = sorted(t1.keys())
-    colors_t1 = ["firebrick" if li in (2, 3) else "steelblue" if li == 13 else "gray"
-                 for li in laps_t1]
+    # Color the comparison laps using the manifest palette; everything else gray.
+    compare_color_by_idx = {c["idx"]: c["color"] for c in compare}
+    colors_t1 = [compare_color_by_idx.get(li, "gray") for li in laps_t1]
 
     # Top-left: decay rate (the primary glide metric)
     ax = axes[0, 0]
@@ -355,16 +396,17 @@ def main():
 
     # Bottom-right: phase-normalized SHAPE (zero-mean, current-independent)
     ax = axes[1, 1]
-    key_laps = [li for li in [2, 3, 13] if li in all_lap_data and len(all_lap_data[li]["filtered"]) >= 10]
-    lap_colors = {2: "firebrick", 3: "salmon", 13: "steelblue"}
-    lap_names = {2: "L2 (strong current)", 3: "L3 (strong current)", 13: "L13 (glass water)"}
-    for li in key_laps:
+    key_laps = [c for c in compare
+                if c["idx"] in all_lap_data
+                and len(all_lap_data[c["idx"]]["filtered"]) >= 10]
+    for c in key_laps:
+        li = c["idx"]
         phase, profiles = phase_normalize_shape(all_lap_data[li]["filtered"])
         if len(profiles) == 0:
             continue
         mean_p = np.mean(profiles, axis=0)
-        ax.plot(phase * 100, mean_p, color=lap_colors.get(li, "gray"),
-                linewidth=2, label=lap_names.get(li, f"L{li}"))
+        ax.plot(phase * 100, mean_p, color=c["color"],
+                linewidth=2, label=c["label"])
     ax.set_xlabel("Stroke phase (%)")
     ax.set_ylabel("Delta-v from mean (m/s)")
     ax.set_title("Speed profile SHAPE — zero-mean, current-independent")
@@ -402,8 +444,7 @@ def main():
             }
 
         laps_t2 = sorted(t2.keys())
-        colors_t2 = ["firebrick" if li in (2, 3) else "steelblue" if li == 13 else "gray"
-                     for li in laps_t2]
+        colors_t2 = [compare_color_by_idx.get(li, "gray") for li in laps_t2]
 
         # Top-left: speed retained per lap
         ax = axes[0, 0]
@@ -439,13 +480,14 @@ def main():
 
         # Bottom-left: absolute speed profiles (GPS-anchored)
         ax = axes[1, 0]
-        for li in key_laps:
+        for c in key_laps:
+            li = c["idx"]
             phase, profiles = phase_normalize_abs(all_lap_data[li]["filtered"])
             if len(profiles) == 0:
                 continue
             mean_p = np.mean(profiles, axis=0)
-            ax.plot(phase * 100, mean_p, color=lap_colors.get(li, "gray"),
-                    linewidth=2, label=lap_names.get(li, f"L{li}"))
+            ax.plot(phase * 100, mean_p, color=c["color"],
+                    linewidth=2, label=c["label"])
         ax.set_xlabel("Stroke phase (%)")
         ax.set_ylabel("Speed over ground (m/s)")
         ax.set_title("Absolute speed profile (GPS-anchored, current-dependent)")
@@ -503,28 +545,36 @@ def main():
         print("Tier 2 columns (GPS, Retained) depend on speed over ground.")
 
     # ================================================================
-    # PLOT 3: Phase detection diagnostic — individual strokes from L2/L13
+    # PLOT 3: Phase detection diagnostic — individual strokes from
+    #         the comparison laps (or first two cruise laps if none specified)
     # ================================================================
     print("\n--- Plot 3: Phase detection diagnostic ---")
-    plot_phase_diagnostic(all_lap_data, t_imu, fwd, gt, gv,
-                          lap_idxs=[2, 13],
-                          savepath=os.path.join(PLOTS_DIR, "33_phase_detection.png"))
+    diagnostic_laps = [c for c in compare
+                       if c["idx"] in all_lap_data
+                       and len(all_lap_data[c["idx"]]["filtered"]) >= 10][:2]
+    if diagnostic_laps:
+        plot_phase_diagnostic(all_lap_data, t_imu, fwd,
+                              diagnostic_laps,
+                              savepath=os.path.join(PLOTS_DIR, "33_phase_detection.png"))
+    else:
+        print("  Skipped — no comparison laps with enough strokes.")
 
 
-def plot_phase_diagnostic(all_lap_data, t_imu, fwd, gt, gv, lap_idxs, savepath,
+def plot_phase_diagnostic(all_lap_data, t_imu, fwd, compare_laps, savepath,
                           n_strokes_per_lap=4):
     """Show individual strokes with phase markers so you can verify how
     catch (accel peak), blade exit (downward zero-cross), and blade entry
-    (upward zero-cross) are being identified."""
-    n_rows = len(lap_idxs)
+    (upward zero-cross) are being identified.
+
+    compare_laps is a list of dicts {idx, label, color} (from get_compare_laps).
+    """
+    n_rows = len(compare_laps)
     fig, axes = plt.subplots(n_rows, 1, figsize=(15, 5 * n_rows))
     if n_rows == 1:
         axes = [axes]
 
-    lap_titles = {2: "Lap 2 (~3.0 m/s, strong current with you)",
-                  13: "Lap 13 (~1.9 m/s, glass water, current against)"}
-
-    for row, lap_idx in enumerate(lap_idxs):
+    for row, c in enumerate(compare_laps):
+        lap_idx = c["idx"]
         d = all_lap_data.get(lap_idx)
         if d is None or len(d["filtered"]) < n_strokes_per_lap + 5:
             continue
@@ -604,7 +654,7 @@ def plot_phase_diagnostic(all_lap_data, t_imu, fwd, gt, gv, lap_idxs, savepath,
 
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Forward accel (m/s²)")
-        ax.set_title(lap_titles.get(lap_idx, f"Lap {lap_idx}"))
+        ax.set_title(f"Lap {lap_idx} — {c['label']}")
         ax.grid(True, alpha=0.25)
         ax.legend(loc="lower right", fontsize=8, ncol=2, framealpha=0.9)
 

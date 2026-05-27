@@ -35,6 +35,7 @@ Edit `analysis/data/sessions.json`. Append a new session under `"sessions"`:
   "mount": "breadboard forward of seat",
   "conditions": "describe wind / chop / current here",
   "notes": "anything unusual about this session",
+  "compare_laps": [],
   "summary_narrative": []
 }
 ```
@@ -44,6 +45,21 @@ Optionally update `"default_session"` to the new number so scripts default to it
 The `summary_narrative` can be empty at first and filled in after you look at
 the plots. It's a list of strings — each one becomes a numbered paragraph in
 the coach summary.
+
+The `compare_laps` field is optional and controls which laps the
+diagnostic / overlay plots highlight. Format:
+
+```json
+"compare_laps": [
+  {"idx": 2,  "label": "L2 (strong current)", "color": "firebrick"},
+  {"idx": 13, "label": "L13 (glass water)",   "color": "steelblue"}
+]
+```
+
+If you leave it as `[]`, scripts auto-pick the fastest cruise, slowest
+cruise, and longest cruise lap with default colors. Set it explicitly to
+call out specific laps (e.g. a drift test, an L/R burst, a hard interval).
+Up to 3 laps is recommended for readability.
 
 ## Step 3 — Run the scripts
 

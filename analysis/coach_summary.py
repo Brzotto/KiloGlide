@@ -1,14 +1,18 @@
-"""Coach-facing single-page summary of session 37.
+"""Coach-facing single-page summary of a KiloGlide session.
 
-Four panels:
-  1. Annotated stroke explainer (what we're measuring)
-  2. Per-lap headline metrics (cadence, peak force, Connected %, glide quality)
-  3. Current cost: L2 vs L13 — same effort, different speed
-  4. Notes on what's reliable and what's tentative
+Four panels + a notes block:
+  1. Annotated stroke explainer (what we're measuring) — drawn from the
+     longest cruise lap in this session.
+  2. Per-lap headline metrics (cadence, peak force, Connected %).
+  3. Conditions cost: fastest vs slowest cruise lap, with current estimate
+     (the comparison laps are auto-picked from data).
+  4. Drag holding you back during glide, per lap.
+  5. Notes block with metric ranges (computed from data) and a hand-curated
+     narrative pulled from sessions.json.
 
 Uses sport-familiar units: mph for speed, lbs for force, spm for cadence,
-seconds for stroke timing. Native units (m/s, N) shown in parentheses where
-useful for engineering reference.
+seconds for stroke timing. Native units (m/s, N) shown in parentheses
+where useful for engineering reference.
 """
 import os
 import sys
@@ -24,6 +28,7 @@ from correlate_kg_garmin import (
     analyze_lap,
 )
 from session_config import get_session_from_args
+from glide_speed_test import lap_median_decay_rate
 
 MS_TO_MPH = 2.23694
 N_TO_LBF = 0.224809
@@ -197,49 +202,26 @@ def main():
     # ====================================================
     ax4 = fig.add_subplot(gs[1, 1])
 
-    # Recompute glide decay rate from IMU integration for each lap
-    # (we have it from glide_speed_test but it's not in per_lap; quick recompute)
-    decay_lbs_per_s = []  # convert m/s² to lbs of "drag force equivalent"
+    # Glide drag in lbs per lap, computed via the shared helper in
+    # glide_speed_test so the algorithm doesn't drift between scripts.
+    decay_lbs_per_s = []
     speed_mph = []
     lap_labels = []
     lap_colors_glide = []
-
-    gt = kg["gps_t"]
-    gv = kg["gps_speed"]
     for li in laps_sorted:
         lap = laps_by_idx[li]
         lt0, lt1 = lap_local_window(lap, align)
         m = (t_imu >= lt0) & (t_imu <= lt1)
         tt = t_imu[m]
         a_fwd = fwd[m]
-        strokes = detect_strokes(tt, a_fwd, prominence=1.5, height=1.0, refractory_s=0.4)
+        strokes = detect_strokes(tt, a_fwd, prominence=1.5, height=1.0,
+                                 refractory_s=0.4)
         if len(strokes) < 10:
             continue
-
-        decays = []
-        for i in range(len(strokes) - 1):
-            i0, i1 = strokes[i][1], strokes[i + 1][1]
-            if i1 - i0 < 20:
-                continue
-            seg_t = tt[i0:i1]
-            seg_a = a_fwd[i0:i1]
-            dur = seg_t[-1] - seg_t[0]
-            if dur < 0.6 or dur > 2.0:
-                continue
-            dt_arr = np.diff(seg_t)
-            dv = np.cumsum(seg_a[:-1] * dt_arr)
-            dv = np.insert(dv, 0, 0.0)
-            peak_idx = int(np.argmax(dv))
-            if peak_idx < len(dv) - 10:
-                glide_t = seg_t[peak_idx:] - seg_t[peak_idx]
-                glide_dv = dv[peak_idx:]
-                if len(glide_t) > 5:
-                    slope = np.polyfit(glide_t, glide_dv, 1)[0]
-                    decays.append(slope)
-        if not decays:
+        med_decay_ms2 = lap_median_decay_rate(tt, a_fwd, strokes)
+        if not np.isfinite(med_decay_ms2):
             continue
-        med_decay_ms2 = float(np.median(decays))
-        # Convert to drag force in lbs: F = m*a
+        # F = m*a, convert to lbs of equivalent drag force
         drag_lbs = abs(med_decay_ms2) * cfg.system_mass_kg * N_TO_LBF
         decay_lbs_per_s.append(drag_lbs)
         speed_mph.append(per_lap[li]["mean_speed_m_s"] * MS_TO_MPH)
