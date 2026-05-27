@@ -36,6 +36,7 @@ double  latitude();       // degrees
 double  longitude();      // degrees
 double  altitudeMSL();    // meters
 double  groundSpeed();    // m/s
+double  headingDeg();     // course over ground, degrees clockwise from true north
 
 // True if the most recent fix included valid UTC date and time. GPS modules
 // often have a position fix before they have time, and vice-versa, so callers

@@ -205,7 +205,7 @@ void writeGps() {
   gp.lon        = (int32_t)(gps::longitude()   * 1e7);
   gp.alt_mm     = (int32_t)(gps::altitudeMSL() * 1000.0);
   gp.speed_mm_s = (uint32_t)(gps::groundSpeed() * 1000.0);
-  gp.heading_cd = 0;       // TODO: add heading getter to gps.h
+  gp.heading_cd = (uint16_t)(gps::headingDeg() * 100.0);
   gp.fix_type   = gps::fixType();
   gp.num_sats   = gps::numSats();
   gp.hdop_c     = 0;       // TODO: add HDOP getter to gps.h
