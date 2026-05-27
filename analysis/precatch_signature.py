@@ -84,6 +84,16 @@ def main():
     lap_colors = {c["idx"]: c["color"] for c in compare}
     lap_names = {c["idx"]: c["label"] for c in compare}
 
+    # Drop any compare_laps that don't actually exist in this session's TCX,
+    # so a typo or sparse manifest doesn't KeyError below.
+    missing = [li for li in target_laps if li not in laps_by_idx]
+    if missing:
+        print(f"  Skipping lap(s) {missing} — not in session's TCX laps.")
+    target_laps = [li for li in target_laps if li in laps_by_idx]
+    if not target_laps:
+        print("No valid comparison laps. Skipping.")
+        return
+
     fig, axes = plt.subplots(2, 2, figsize=(16, 11))
 
     # --- Top-left: mean accel profile per lap overlaid ---
@@ -133,27 +143,32 @@ def main():
     # (proxy for noise/wiggle in glide)
     ax = axes[1, 0]
     zc_rates = []
-    labels = []
+    zc_lap_idxs = []  # laps that actually contributed data
     for li in target_laps:
         if li not in lap_data:
             continue
         phase, profiles, _, _ = lap_data[li]
-        # Look at the glide region (15% to 85% of cycle, roughly)
         glide_slice = (phase >= 0.15) & (phase <= 0.85)
         per_stroke_zcs = []
         for prof in profiles:
             g = prof[glide_slice]
-            # Count zero crossings within glide
             zcs = np.sum(np.diff(np.sign(g)) != 0)
             per_stroke_zcs.append(zcs)
+        if not per_stroke_zcs:
+            continue
         zc_rates.append(per_stroke_zcs)
-        labels.append(lap_names[li])
-    bp = ax.boxplot(zc_rates,
-                    tick_labels=[f"L{li}" for li in target_laps if li in lap_data],
-                    patch_artist=True)
-    for patch, li in zip(bp["boxes"], [li for li in target_laps if li in lap_data]):
-        patch.set_facecolor(lap_colors[li])
-        patch.set_alpha(0.6)
+        zc_lap_idxs.append(li)
+
+    if zc_rates:
+        bp = ax.boxplot(zc_rates,
+                        tick_labels=[f"L{li}" for li in zc_lap_idxs],
+                        patch_artist=True)
+        for patch, li in zip(bp["boxes"], zc_lap_idxs):
+            patch.set_facecolor(lap_colors[li])
+            patch.set_alpha(0.6)
+    else:
+        ax.text(0.5, 0.5, "(no laps with enough strokes)", ha="center",
+                va="center", transform=ax.transAxes, fontsize=10, color="gray")
     ax.set_ylabel("Zero-crossings within glide (15-85% phase)")
     ax.set_title("Glide noise per stroke\n(more zero-crossings = more body/chop wiggle)")
     ax.grid(True, alpha=0.3, axis="y")
@@ -163,20 +178,18 @@ def main():
     ax.axis("off")
     rows = ["Lap        Pre-catch min %   Pre-catch min value   Mean ZCs in glide"]
     rows.append("-" * 70)
+    # Build a clean lookup from lap_idx -> mean ZCs so the row builder doesn't
+    # depend on positional alignment with zc_rates.
+    mean_zcs_by_lap = {li: float(np.mean(z)) for li, z in zip(zc_lap_idxs, zc_rates)}
     for li in target_laps:
         if li not in lap_data:
             continue
         phase, profiles, mean_p, _ = lap_data[li]
-        # Find the minimum of mean accel in the last 30% of the cycle
         tail_slice = (phase >= 0.65) & (phase <= 0.95)
         idx_in_tail = np.argmin(mean_p[tail_slice])
         min_phase = phase[tail_slice][idx_in_tail] * 100
         min_val = mean_p[tail_slice][idx_in_tail]
-        zc_idx = target_laps.index(li) if li in lap_data else None
-        # Get the boxplot data index
-        valid_lis = [x for x in target_laps if x in lap_data]
-        zc_idx = valid_lis.index(li)
-        mean_zcs = np.mean(zc_rates[zc_idx])
+        mean_zcs = mean_zcs_by_lap.get(li, float("nan"))
         rows.append(f"L{li:<3d}       {min_phase:6.1f}%          {min_val:+5.2f} m/s²"
                     f"            {mean_zcs:5.1f}")
     ax.text(0.05, 0.95, "\n".join(rows), transform=ax.transAxes, fontsize=10,

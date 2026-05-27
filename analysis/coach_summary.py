@@ -27,7 +27,7 @@ from correlate_kg_garmin import (
     rotate_accel, rotate_gyro, detect_strokes, lap_local_window,
     analyze_lap,
 )
-from session_config import get_session_from_args
+from session_config import get_session_from_args, get_compare_laps
 from glide_speed_test import lap_median_decay_rate
 
 MS_TO_MPH = 2.23694
@@ -111,16 +111,18 @@ def main():
     connected = [per_lap[li]["connected_fraction"] * 100 for li in laps_sorted]
     peak_force_lbs = [per_lap[li]["mean_peak_force_N"] * N_TO_LBF for li in laps_sorted]
 
-    # Color by direction: with-current laps reddish, against-current bluish
-    # From session 37: laps 2-4 strong miles (with current), 9-13 against
+    # Color the highlighted comparison laps with their manifest colors;
+    # everything else gray. Avoids the older mistake of coloring by hardcoded
+    # session-37 lap numbers (which implied direction-of-current incorrectly
+    # for any other session).
+    per_lap_stats = {li: {"n_strokes": per_lap[li]["n_strokes"],
+                          "mean_speed_m_s": per_lap[li]["mean_speed_m_s"]}
+                     for li in per_lap}
+    compare = get_compare_laps(cfg, per_lap_stats)
+    compare_color_by_idx = {c["idx"]: c["color"] for c in compare}
+
     def lap_color(li):
-        if li in (2, 3, 4):
-            return "firebrick"
-        if li == 13:
-            return "steelblue"
-        if li in (9, 10, 11, 12):
-            return "lightsteelblue"
-        return "gray"
+        return compare_color_by_idx.get(li, "gray")
 
     colors = [lap_color(li) for li in laps_sorted]
 
@@ -142,8 +144,15 @@ def main():
     ax2.set_ylabel("Cadence (spm)  &  Peak force (lbs)")
     ax2b.set_ylabel("Connected stroke %  (higher = better)", color="seagreen")
     ax2b.tick_params(axis="y", labelcolor="seagreen")
-    ax2.set_title("Per-lap headline metrics\n"
-                  "Red = current pushing you  •  Blue = current against you",
+    # Subtitle says what the colored bars mean for THIS session — labels
+    # come from the manifest's compare_laps, so they describe the actual
+    # conditions of those laps (not a hardcoded current-direction story).
+    if compare:
+        legend_bits = [f"{c['color']}: {c['label']}" for c in compare]
+        subtitle = "Highlighted laps — " + "  •  ".join(legend_bits)
+    else:
+        subtitle = "Gray bars: no comparison laps in manifest"
+    ax2.set_title("Per-lap headline metrics\n" + subtitle,
                   fontsize=11, fontweight="bold")
     ax2.grid(True, alpha=0.3, axis="y")
 
@@ -313,16 +322,19 @@ def main():
     plt.close(fig)
     print(f"Saved: {savepath}")
 
-    # Print a quick text summary too
-    print("\n=== Session 37 headline numbers ===")
-    print(f"L2  (with current):   {per_lap[2]['mean_speed_m_s']*MS_TO_MPH:.1f} mph, "
-          f"{per_lap[2]['cadence_spm']:.0f} spm, "
-          f"{per_lap[2]['mean_peak_force_N']*N_TO_LBF:.0f} lbs peak, "
-          f"{per_lap[2]['connected_fraction']*100:.0f}% connected")
-    print(f"L13 (against current): {per_lap[13]['mean_speed_m_s']*MS_TO_MPH:.1f} mph, "
-          f"{per_lap[13]['cadence_spm']:.0f} spm, "
-          f"{per_lap[13]['mean_peak_force_N']*N_TO_LBF:.0f} lbs peak, "
-          f"{per_lap[13]['connected_fraction']*100:.0f}% connected")
+    # Print a quick text summary too. Use the same fastest/slowest cruise
+    # laps that drove panel 3 so the printout matches the plot.
+    print(f"\n=== Session {cfg.session_id} headline numbers ===")
+    if len(cruise_laps) >= 2:
+        for li, role in [(fastest, "fastest"), (slowest, "slowest")]:
+            r = per_lap[li]
+            print(f"L{li} ({role:>7} cruise):  "
+                  f"{r['mean_speed_m_s']*MS_TO_MPH:.1f} mph, "
+                  f"{r['cadence_spm']:.0f} spm, "
+                  f"{r['mean_peak_force_N']*N_TO_LBF:.0f} lbs peak, "
+                  f"{r['connected_fraction']*100:.0f}% connected")
+    else:
+        print("(not enough cruise laps for fastest/slowest comparison)")
 
 
 if __name__ == "__main__":
