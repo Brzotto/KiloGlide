@@ -12,6 +12,11 @@
       "mount": "breadboard forward of seat",
       "conditions": "mixed glass + chop, ~1.2 mph current",
       "notes": "First on-water test. Wave 1 + Wave 2 firmware. No TIME records (pre-2026-05-23 firmware).",
+      "compare_laps": [
+        {"idx": 2,  "label": "L2 (strong current)", "color": "firebrick"},
+        {"idx": 3,  "label": "L3 (strong current)", "color": "salmon"},
+        {"idx": 13, "label": "L13 (glass water)",   "color": "steelblue"}
+      ],
       "summary_narrative": [
         "Current estimate ~1.2 mph each way (rough — assumes similar effort both directions). L2 ran 6.7 mph with current, L13 ran 4.3 mph against. Cadences matched (~48 spm) but force differed ~10% (46.4 vs 42.0 lbs), so part of the 2.4 mph gap is real effort variation, not just current. A drift test or NOAA tidal data would tighten this.",
         "Connected stroke % drops in chop. Glass water L13 = 18%, choppy fast laps L2-3 = 6-9%. Same paddler, same cadence — water conditions disrupt catch timing.",

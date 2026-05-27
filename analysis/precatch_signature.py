@@ -12,7 +12,7 @@ from correlate_kg_garmin import (
     load_kg, load_tcx, align_kg_to_garmin, detect_imu_axes,
     rotate_accel, detect_strokes, lap_local_window,
 )
-from session_config import get_session_from_args
+from session_config import get_session_from_args, get_compare_laps
 
 
 def phase_accel_profiles(tt, a_fwd, strokes, n_phase=201):
@@ -49,11 +49,40 @@ def main():
     fwd = A_body[:, 0]
     laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
 
-    lap_colors = {2: "firebrick", 3: "salmon", 13: "steelblue"}
-    lap_names = {2: "L2 (3.0 m/s, strong current)",
-                 3: "L3 (3.1 m/s, strong current)",
-                 13: "L13 (1.9 m/s, glass water)"}
-    target_laps = [2, 3, 13]
+    # Decide which laps to compare. Use manifest's compare_laps if set;
+    # otherwise auto-pick from per-lap stroke counts (need to compute first).
+    if cfg.compare_laps:
+        compare = list(cfg.compare_laps)
+    else:
+        # Quick auto-pick using stroke count from the TCX (no IMU work yet).
+        # This is a fall-back; manifest is preferred.
+        gt = kg["gps_t"]
+        gv = kg["gps_speed"]
+        per_lap_stats = {}
+        for lap in tcx["laps"]:
+            li = lap["idx"]
+            lt0, lt1 = lap_local_window(lap, align)
+            m = (t_imu >= lt0) & (t_imu <= lt1)
+            if np.sum(m) < 500:
+                continue
+            tt = t_imu[m]
+            a_fwd = fwd[m]
+            strokes = detect_strokes(tt, a_fwd, prominence=1.5, height=1.0,
+                                     refractory_s=0.4)
+            gm = (gt >= lt0) & (gt <= lt1)
+            mean_spd = float(np.mean(gv[gm])) if np.any(gm) else 0.0
+            per_lap_stats[li] = {"n_strokes": len(strokes),
+                                 "mean_speed_m_s": mean_spd}
+        compare = get_compare_laps(cfg, per_lap_stats)
+
+    if not compare:
+        print("No comparison laps available (manifest empty and not enough "
+              "cruise laps to auto-pick). Skipping.")
+        return
+
+    target_laps = [c["idx"] for c in compare]
+    lap_colors = {c["idx"]: c["color"] for c in compare}
+    lap_names = {c["idx"]: c["label"] for c in compare}
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 11))
 
@@ -119,7 +148,8 @@ def main():
             per_stroke_zcs.append(zcs)
         zc_rates.append(per_stroke_zcs)
         labels.append(lap_names[li])
-    bp = ax.boxplot(zc_rates, labels=[lap_names[li].split()[0] for li in target_laps if li in lap_data],
+    bp = ax.boxplot(zc_rates,
+                    tick_labels=[f"L{li}" for li in target_laps if li in lap_data],
                     patch_artist=True)
     for patch, li in zip(bp["boxes"], [li for li in target_laps if li in lap_data]):
         patch.set_facecolor(lap_colors[li])

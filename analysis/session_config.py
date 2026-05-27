@@ -39,6 +39,7 @@ class SessionConfig:
     conditions: str
     notes: str
     summary_narrative: list
+    compare_laps: list  # [{idx, label, color}, ...] for cross-lap comparison plots
 
 
 def _load_manifest():
@@ -84,7 +85,53 @@ def get_session(session_id=None) -> SessionConfig:
         conditions=s["conditions"],
         notes=s["notes"],
         summary_narrative=s.get("summary_narrative", []),
+        compare_laps=s.get("compare_laps", []),
     )
+
+
+# Default fallback palette for auto-picked comparison laps.
+_AUTO_COLORS = ["firebrick", "steelblue", "seagreen"]
+
+
+def get_compare_laps(cfg, per_lap_stats=None):
+    """Return list of comparison-lap dicts [{idx, label, color}, ...].
+
+    Resolution order:
+      1. cfg.compare_laps from sessions.json (if set)
+      2. Auto-pick fastest cruise + slowest cruise + longest cruise from
+         per_lap_stats (a dict mapping lap_idx -> {"n_strokes", "mean_speed_m_s"}).
+         Cruise lap defined as n_strokes > 100.
+      3. Empty list — caller renders no comparison panel.
+
+    Caller is expected to handle empty list gracefully (skip the panel).
+    """
+    if cfg.compare_laps:
+        return list(cfg.compare_laps)
+
+    if not per_lap_stats:
+        return []
+
+    cruise = {li: s for li, s in per_lap_stats.items()
+              if s.get("n_strokes", 0) > 100}
+    if len(cruise) < 2:
+        return []
+
+    fastest = max(cruise, key=lambda li: cruise[li].get("mean_speed_m_s", 0))
+    slowest = min(cruise, key=lambda li: cruise[li].get("mean_speed_m_s", 0))
+    longest = max(cruise, key=lambda li: cruise[li].get("n_strokes", 0))
+
+    picks, seen = [], set()
+    role_color = [
+        (fastest, "fastest cruise", _AUTO_COLORS[0]),
+        (slowest, "slowest cruise", _AUTO_COLORS[1]),
+        (longest, "longest cruise", _AUTO_COLORS[2]),
+    ]
+    for li, role, color in role_color:
+        if li in seen:
+            continue
+        picks.append({"idx": li, "label": f"L{li} ({role})", "color": color})
+        seen.add(li)
+    return picks
 
 
 def add_session_arg(parser: argparse.ArgumentParser):
