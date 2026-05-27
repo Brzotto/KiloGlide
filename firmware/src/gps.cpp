@@ -28,6 +28,7 @@ double   g_lat       = 0;
 double   g_lon       = 0;
 double   g_alt       = 0;
 double   g_speed     = 0;
+double   g_heading   = 0;
 bool     g_timeValid = false;
 uint64_t g_unix_us   = 0;
 
@@ -63,6 +64,9 @@ bool update() {
   g_lon   = dev.getLongitude()    / 1e7;
   g_alt   = dev.getAltitudeMSL() / 1000.0;
   g_speed = dev.getGroundSpeed() / 1000.0;
+  g_heading = dev.getHeading() / 100000.0;
+  while (g_heading < 0.0) g_heading += 360.0;
+  while (g_heading >= 360.0) g_heading -= 360.0;
 
   // UTC time validity. GPS modules typically get a position fix before they
   // can decode the full time-of-week + week-number needed for absolute time,
@@ -86,6 +90,7 @@ double   latitude()          { return g_lat; }
 double   longitude()         { return g_lon; }
 double   altitudeMSL()       { return g_alt; }
 double   groundSpeed()       { return g_speed; }
+double   headingDeg()        { return g_heading; }
 bool     hasValidTime()      { return g_timeValid; }
 uint64_t unixMicroseconds()  { return g_unix_us; }
 
