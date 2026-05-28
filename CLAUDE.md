@@ -55,6 +55,19 @@ Open issues:
 
 PlatformIO with Arduino-ESP32 framework. Config in `platformio.ini`.
 
+## Local tooling
+
+GitHub CLI is installed and authenticated as `Brzotto`, but Codex may not see
+`gh` on PATH. Use the full path if needed:
+
+`C:\Program Files\GitHub CLI\gh.exe`
+
+Useful commands:
+- `& 'C:\Program Files\GitHub CLI\gh.exe' auth status`
+- `& 'C:\Program Files\GitHub CLI\gh.exe' pr create`
+- `& 'C:\Program Files\GitHub CLI\gh.exe' pr view`
+- `& 'C:\Program Files\GitHub CLI\gh.exe' pr merge`
+
 ## Architecture decisions
 
 - SPI2 shared: IMU + LCD (different CS, different speeds — use beginTransaction)
