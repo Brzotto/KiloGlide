@@ -89,6 +89,67 @@ Add a 100 nF capacitor from `ESP32_BUTTON` to GND near the ESP32/button-sense
 input. This filters a few-inch waterproof button lead while firmware still does
 normal debounce and long-press timing.
 
+## Buttons
+
+Use four board-mounted right-angle buttons for the product UI. Prefer
+through-hole/PTH right-angle tact switches for Rev A because they are stronger
+and easier to rework than SMT switches. SMT buttons are acceptable later if the
+case mechanically supports the actuator and limits side load on the solder
+joints.
+
+Button wiring should stay simple:
+
+```text
+GPIO ---- button ---- GND
+```
+
+Use `INPUT_PULLUP` in firmware, so pressed reads `LOW`. Firmware debounce and
+long-press detection are sufficient; no external debounce circuit is required.
+
+Suggested assignment:
+
+| Button | GPIO | Notes |
+|---|---:|---|
+| Power / select | 1 | Existing firmware button input; use diode-isolated sense path if sharing with the power latch |
+| Up / next | 2 | Plain GPIO-to-ground button |
+| Down / previous | 39 | Plain GPIO-to-ground button |
+| Back / mark | 40 | Plain GPIO-to-ground button |
+
+Keep `ESP32_HOLD` separate from the button inputs; suggested `ESP32_HOLD` pins
+are GPIO 18 or GPIO 21.
+
+## Sharp memory display
+
+Rev A uses the Adafruit 2.7 inch Sharp Memory Display breakout (PID 4694).
+Power the breakout from the system 5 V boost rail through its `VIN` pin, and
+drive the SPI/control pins from ESP32 3.3 V GPIO. Do not power the rest of the
+system from the display breakout's `3v3` pin.
+
+Recommended connector signals:
+
+| Signal | Connection |
+|---|---|
+| GND | System ground |
+| VIN | System 5 V boost output |
+| CLK | SPI2 SCK, GPIO 12 |
+| DI | SPI2 MOSI, GPIO 11 |
+| CS | Suggested GPIO 16 |
+| DISP | Optional display enable/control or spare |
+| EXTCOMIN / EMD | Optional spare/test pad for external VCOM refresh |
+
+The screen can be rotated in software with the Adafruit GFX `setRotation()`
+API. Mounting the breakout 180 degrees is electrically fine, but the physical
+board is visually directional: the display flex, larger lower bezel/chin, and
+Adafruit label are on one edge. Keep the natural orientation if the full
+breakout face is visible; rotating the board is fine if the enclosure/window
+hides the PCB and only the active display area is visible.
+
+The Sharp panel needs periodic VCOM inversion. For Rev A, handle this in
+firmware by calling the display refresh path periodically, even if the image is
+static. Leave an optional EXTCOMIN/EMD pad or connector pin as an escape hatch,
+but do not spend a dedicated GPIO on external refresh unless testing shows it
+is needed.
+
 ## Suggested JLCPCB parts
 
 Verify stock and assembly class before ordering; these were selected as
@@ -133,6 +194,9 @@ Suggested new Rev A uses:
 | 16 | Display CS |
 | 17 | Display EXTCOMIN / display refresh, if needed |
 | 18 or 21 | ESP32_HOLD output for power latch |
+| 2 | Button: Up / next |
+| 39 | Button: Down / previous |
+| 40 | Button: Back / mark |
 
 Avoid GPIO 0, 3, 45, and 46 for normal peripherals because they are ESP32-S3
 strapping pins. Avoid GPIO 19 and 20 because they are native USB. Leave GPIO 43
