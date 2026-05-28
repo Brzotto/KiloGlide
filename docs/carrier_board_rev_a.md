@@ -13,6 +13,40 @@ small assembled support parts.
 - Keep future cost-down bare-chip versions on a separate sheet/project or mark
   them clearly as not populated.
 
+## Breakout connectors
+
+Use socket headers for the breakouts so Rev A can be assembled and serviced like
+the current bench harness. Normal-height Sullins sockets are fine for most
+modules. Use a low-profile Samtec socket for the IMU electrical header to reduce
+mechanical leverage and board motion.
+
+| Module | Carrier connector | Part | Source | Notes |
+|---|---|---|---|---|
+| ESP32-S3 DevKitC-1 | Two 1x22 female sockets | Sullins PPPC221LFBN-RC | Digi-Key | DevKit plugs into two separate 0.1 inch rows; set row spacing from the actual board/mechanical drawing |
+| Sharp 2.7 inch display breakout | 1x9 female socket | Sullins PPPC091LFBN-RC | Digi-Key | Standard-height socket is fine |
+| microSD breakout, Adafruit PID 4682 | 1x9 female socket | Sullins PPPC091LFBN-RC | Digi-Key | Actual board in hand uses 1x9 |
+| LSM6DSOX IMU electrical side | 1x9 low-profile female socket | Samtec SLW-109-01-G-S | Digi-Key | Low-profile socket reduces IMU wobble |
+| LSM6DSOX IMU mechanical side | 1x5 socket or matching mechanical support | Samtec SLW-105-01-G-S or equivalent | Digi-Key | Mechanical support only; pads NC |
+| bq25185 5 V boost board | 1x8 female socket | Sullins PPPC081LFBN-RC | Digi-Key | Carry only needed nets such as 5V, GND, VBAT/BAT, EN, and optional status/test nets |
+| GPS / Qwiic I2C | 4-pin JST-SH/Qwiic vertical connector | XYECONN XY-BM04B-SRSS-TB, JLC C51940129 | JLCPCB | JLC-assembled Qwiic-compatible connector; verify footprint and pin order |
+
+For socketed breakouts, use matching standoff height if mounting screws are
+used. The IMU should be mechanically rigid but not bent by mismatched header and
+standoff heights.
+
+JLCPCB assembly equivalents/fallbacks:
+
+| Module/use | Preferred hand-solder part | JLCPCB assembly candidate | Notes |
+|---|---|---|---|
+| ESP32-S3 DevKitC-1, 1x22 sockets | Sullins PPPC221LFBN-RC | XUNPU FH2.54-09-22PZD, C7500786 | 1x22, 2.54 mm, 8.5 mm height, wave soldering |
+| Standard 1x9 sockets for Sharp/microSD | Sullins PPPC091LFBN-RC | HCTL PM254-1-09-Z-8.5, C2897372 | 1x9, 2.54 mm, 8.5 mm height, wave soldering |
+| IMU low-profile 1x9 electrical socket | Samtec SLW-109-01-G-S | No good low-profile JLC equivalent found | Hand-solder Samtec if low-profile matters; otherwise use C2897372 |
+| IMU 1x5 mechanical support | Samtec SLW-105-01-G-S or matching support | HCTL PM254-1-05-Z-8.5, C3012027 | Use only if height matches the IMU electrical support strategy; pads NC |
+| bq25185 1x8 socket | Sullins PPPC081LFBN-RC | CONNFLY DS1023-01-1x8SF11, C47355683 | 1x8, 2.54 mm, through-hole/wave soldering |
+| Alternate bq25185 1x8 socket | Sullins PPPC081LFBN-RC | BOOMELE 2.54-1x8P female, C27438 | Very high stock; verify footprint before use |
+| GPS/Qwiic connector | SparkFun PRT-16766 or JST BM04B-SRSS-TB | XYECONN XY-BM04B-SRSS-TB, C51940129 | SMT vertical JST-SH/Qwiic-compatible |
+| Right-angle UI button candidate | TBD after enclosure mockup | XUNPU TS-1002N-04526, C455128 | PTH right-angle SPST tact, 2.6 N; verify actuator height/feel |
+
 ## Fuel gauge
 
 Use a MAX17048 single-cell LiPo fuel gauge on the existing I2C bus.
@@ -84,6 +118,23 @@ to VBAT:
 |---|---|---|
 | D1 | OFF_LATCH | BUTTON_RAW |
 | D2 | ESP32_BUTTON | BUTTON_RAW |
+
+Use `BAT54C` as the default dual-diode part. It is a common-cathode dual
+Schottky in SOT-23. `BAS40-05` and `BAS70-05` are acceptable SOT-23
+common-cathode substitutes. Tiny SOT-723 parts such as `NSR30CM3T5G` are
+electrically suitable but are less friendly for inspection/rework on Rev A.
+
+Critical pin mapping for the common-cathode SOT-23 part:
+
+| Package pin | Function | Net |
+|---:|---|---|
+| 1 | Anode 1 | OFF_LATCH or ESP32_BUTTON |
+| 2 | Anode 2 | ESP32_BUTTON or OFF_LATCH |
+| 3 | Common cathode | BUTTON_RAW |
+
+Pins 1 and 2 may swap because both are diode anodes. Pin 3 must connect to
+`BUTTON_RAW`. If reusing a schematic symbol from another package, verify the
+symbol pin numbers against the selected SOT-23 footprint before ordering.
 
 Add a 100 nF capacitor from `ESP32_BUTTON` to GND near the ESP32/button-sense
 input. This filters a few-inch waterproof button lead while firmware still does
@@ -162,9 +213,11 @@ JLC-friendly parts during Rev A planning.
 | Alternate dual NMOS | 2N7002DW-7-F | C83571 | SOT-363 | Name-brand alternate |
 | Dual Schottky, common cathode | BAT54C | C916424 | SOT-23 | Common cathode goes to BUTTON_RAW |
 | Alternate dual Schottky | BAT54C | C408388 | SOT-23 | Also suitable |
+| Alternate dual Schottky | BAS40-05 | C5189796 | SOT-23 | Common-cathode substitute for BAT54C |
 | 100k resistor | 0603WAF1003T5E | C25803 | 0603 | Good for FET gate pulldown and EN pullup/pulldown as needed |
 | 1M resistor | 0603WAF1004T5E | C22935 | 0603 | Good for low-current BUTTON_RAW/OFF_LATCH pullup |
 | 100 nF capacitor | CL10B104KB8NNNC | C1591 | 0603 | X7R, 50 V, button filter and decoupling |
+| Qwiic connector | XY-BM04B-SRSS-TB | C51940129 | SMD, 1 mm pitch | 4-pin vertical JST-SH/Qwiic-compatible connector |
 
 ## ESP32 pin reservations
 
