@@ -59,6 +59,10 @@ Running log of project decisions and reasoning. Update this when decisions chang
 
 USB-C → bq25185 → 3.3V to ESP32 + peripherals. LCD gets raw LiPo voltage and uses Adafruit breakout's onboard boost to 5V. No external buck-boost needed.
 
+Rev A PCB carrier-board notes, including the MAX17048 fuel gauge, bq25185 boost
+`EN` soft-latch, and JLCPCB assembly parts, live in
+`docs/carrier_board_rev_a.md`.
+
 ---
 
 ## Firmware Decisions
