@@ -25,14 +25,18 @@ mechanical leverage and board motion.
 | ESP32-S3 DevKitC-1 | Two 1x22 female sockets | Sullins PPPC221LFBN-RC | Digi-Key | DevKit plugs into two separate 0.1 inch rows; set row spacing from the actual board/mechanical drawing |
 | Sharp 2.7 inch display breakout | 1x9 female socket | Sullins PPPC091LFBN-RC | Digi-Key | Standard-height socket is fine |
 | microSD breakout, Adafruit PID 4682 | 1x9 female socket | Sullins PPPC091LFBN-RC | Digi-Key | Actual board in hand uses 1x9 |
-| LSM6DSOX IMU electrical side | 1x9 low-profile female socket | Samtec SLW-109-01-G-S | Digi-Key | Low-profile socket reduces IMU wobble |
-| LSM6DSOX IMU mechanical side | 1x5 socket or matching mechanical support | Samtec SLW-105-01-G-S or equivalent | Digi-Key | Mechanical support only; pads NC |
+| LSM6DSOX IMU electrical side | 1x9 low-profile female socket | Samtec SLW-109-01-*-S | Digi-Key or JLCPCB if stocked | Low-profile socket reduces IMU wobble; plating suffix is flexible |
+| LSM6DSOX IMU mechanical side | 1x5 socket or matching mechanical support | Samtec SLW-105-01-*-S or equivalent | Digi-Key or JLCPCB if stocked | Mechanical support only; pads NC; height must match electrical side |
 | bq25185 5 V boost board | 1x8 female socket | Sullins PPPC081LFBN-RC | Digi-Key | Carry only needed nets such as 5V, GND, VBAT/BAT, EN, and optional status/test nets |
 | GPS / Qwiic I2C | 4-pin JST-SH/Qwiic vertical connector | XYECONN XY-BM04B-SRSS-TB, JLC C51940129 | JLCPCB | JLC-assembled Qwiic-compatible connector; verify footprint and pin order |
 
 For socketed breakouts, use matching standoff height if mounting screws are
 used. The IMU should be mechanically rigid but not bent by mismatched header and
-standoff heights.
+standoff heights. The IMU socket should be the Samtec `SLW` low-profile family,
+not `SSW`; `SSW` is the normal-height 8.5 mm class and does not reduce the IMU
+lever arm. Normal 0.1 inch square male header soldered to the IMU breakout is
+expected to mate with the `SLW` socket; install the longer male pins down into
+the carrier socket.
 
 JLCPCB assembly equivalents/fallbacks:
 
@@ -40,8 +44,10 @@ JLCPCB assembly equivalents/fallbacks:
 |---|---|---|---|
 | ESP32-S3 DevKitC-1, 1x22 sockets | Sullins PPPC221LFBN-RC | XUNPU FH2.54-09-22PZD, C7500786 | 1x22, 2.54 mm, 8.5 mm height, wave soldering |
 | Standard 1x9 sockets for Sharp/microSD | Sullins PPPC091LFBN-RC | HCTL PM254-1-09-Z-8.5, C2897372 | 1x9, 2.54 mm, 8.5 mm height, wave soldering |
-| IMU low-profile 1x9 electrical socket | Samtec SLW-109-01-G-S | No good low-profile JLC equivalent found | Hand-solder Samtec if low-profile matters; otherwise use C2897372 |
-| IMU 1x5 mechanical support | Samtec SLW-105-01-G-S or matching support | HCTL PM254-1-05-Z-8.5, C3012027 | Use only if height matches the IMU electrical support strategy; pads NC |
+| IMU low-profile 1x9 electrical socket | Samtec SLW-109-01-*-S | Samtec SLW-109-01-*-S if stocked by JLCPCB | Preferred Rev A choice; any plating suffix is acceptable if geometry matches |
+| IMU low-profile 1x9 fallback | Samtec SLW-109-01-*-S | Samtec SLW-110-01-G-S, C3321070 | 1x10 low-profile fallback; use pins 1-9 and mark pin 10 NC |
+| IMU normal-height 1x9 fallback | Sullins PPPC091LFBN-RC | HCTL PM254-1-09-Z-8.5, C2897372 | Electrically works but is not low-profile; use only with matching-height support |
+| IMU 1x5 mechanical support | Samtec SLW-105-01-*-S or matching support | Matching low-profile 1x5 if stocked by JLCPCB | Use only if height matches the IMU electrical support strategy; pads NC |
 | bq25185 1x8 socket | Sullins PPPC081LFBN-RC | CONNFLY DS1023-01-1x8SF11, C47355683 | 1x8, 2.54 mm, through-hole/wave soldering |
 | Alternate bq25185 1x8 socket | Sullins PPPC081LFBN-RC | BOOMELE 2.54-1x8P female, C27438 | Very high stock; verify footprint before use |
 | GPS/Qwiic connector | SparkFun PRT-16766 or JST BM04B-SRSS-TB | XYECONN XY-BM04B-SRSS-TB, C51940129 | SMT vertical JST-SH/Qwiic-compatible |
