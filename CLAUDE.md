@@ -93,11 +93,25 @@ commit. Directory-level instruction files should stay short and point to the
 canonical docs instead of repeating large project history; this keeps future
 agent sessions small while preserving the right context.
 
-When asked to write code:
-- Keep it simple. No premature optimization.
-- Use Arduino framework conventions.
-- Comment non-obvious lines.
-- One feature at a time, testable before moving on.
+## Coding guidelines
+
+Keep it simple — no premature optimization. Comment non-obvious lines. Build one
+feature at a time, testable before moving on.
+
+**Write general code, never session-specific one-offs.** Analysis scripts must
+work for any session, not just the one in front of you. Never hard-code session
+facts — file paths, dates, lap numbers, or thresholds tuned to a single session.
+Session-specific data belongs in the manifest (`analysis/data/sessions.json`),
+reached via `session_config` and a `--session N` argument; generated artifacts go
+under `analysis/plots/session_N/`.
+
+Physically-motivated constants (e.g. the 0.5-3 Hz stroke band) are fine as
+defaults. Anything that could vary by session, boat, mount, or conditions must be
+overridable — via the manifest or a CLI flag — not edited in the source. When you
+touch an older exploratory script that still carries single-session assumptions,
+generalize it rather than adding another hard-coded constant.
+
+Firmware: use Arduino framework conventions.
 
 ## Key documents
 
@@ -111,5 +125,7 @@ When asked to write code:
 - docs/README_analysis.md — how to run the analysis pipeline on a new session
 - docs/handoff_2026-05-23.md — handoff from the session 37 pipeline build
 - docs/handoff_2026-05-23_glide.md — handoff from the glide-analysis session
+- docs/connection_test_protocol.md — on-water A/B protocol for the connection-usefulness test
+- docs/handoff_2026-06-03_connection.md — handoff for the connection-usefulness phase
 - analysis/session_37_report.md — first water-test report
 - analysis/session_37_status_and_next_session.md — what's working and what's needed next

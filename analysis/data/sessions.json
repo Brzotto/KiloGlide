@@ -5,7 +5,7 @@
       "date": "2026-05-21",
       "kg_file": "kg_000037.bin",
       "garmin_tcx": "activity_22960598946.tcx",
-      "nk_speedcoach": null,
+      "nk_speedcoach": "speedcoach_2669512_20260521.csv",
       "location": "Alameda Bay, CA",
       "boat": "OC1",
       "system_mass_kg": 85,
@@ -22,6 +22,45 @@
         "Connected stroke % drops in chop. Glass water L13 = 18%, choppy fast laps L2-3 = 6-9%. Same paddler, same cadence — water conditions disrupt catch timing.",
         "Pull is brief (~0.45 s), glide is the dominant phase (~0.75 s). Higher cadence shrinks glide time, not pull time — there's less recovery to set up the next catch."
       ]
+    },
+    "39": {
+      "date": "2026-06-03",
+      "kg_file": "kg_000039.bin",
+      "garmin_tcx": null,
+      "nk_speedcoach": null,
+      "location": "indoor bench",
+      "boat": "OC1",
+      "system_mass_kg": 85,
+      "mount": "bench / handheld",
+      "conditions": "indoor post-flash checkout, no GPS fix",
+      "notes": "Post-flash firmware checkout (TIME records + heading + hardened logging). Short indoor session, no GPS fix expected.",
+      "compare_laps": []
+    },
+    "40": {
+      "date": "2026-06-03",
+      "kg_file": "kg_000040.bin",
+      "garmin_tcx": null,
+      "nk_speedcoach": null,
+      "location": "outdoor (stationary)",
+      "boat": "OC1",
+      "system_mass_kg": 85,
+      "mount": "bench / handheld",
+      "conditions": "outdoor GPS checkout: acquired fix, lost it, recovered. No paddling.",
+      "notes": "Post-flash GPS feature checkout — validates TIME records, fix-transition events, heading. Stationary, no strokes.",
+      "compare_laps": []
+    },
+    "41": {
+      "date": "2026-06-03",
+      "kg_file": "kg_000041.bin",
+      "garmin_tcx": null,
+      "nk_speedcoach": null,
+      "location": "outdoor (stationary)",
+      "boat": "OC1",
+      "system_mass_kg": 85,
+      "mount": "bench / handheld",
+      "conditions": "outdoor GPS checkout after correct reflash. No paddling.",
+      "notes": "Confirms new firmware actually on device: TIME record + FIX_FOUND/LOST events + real heading all present. No strokes.",
+      "compare_laps": []
     }
   }
 }

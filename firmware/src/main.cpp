@@ -17,6 +17,7 @@
 #include "logger.h"
 #include "button.h"
 #include "led.h"
+#include "version.h"
 
 static bool gpsAvailable = false;
 static bool sdAvailable  = false;
@@ -50,7 +51,13 @@ constexpr unsigned long TIME_ANCHOR_INTERVAL_MS = 5UL * 60UL * 1000UL;
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.println("KiloGlide boot");
+  // Identify the running build so a stale/failed flash is obvious at boot.
+  // __DATE__/__TIME__ are the compile time of this file; do a clean build
+  // (pio run -t clean) if you want them to always refresh.
+  Serial.print("KiloGlide boot — firmware v");
+  Serial.print(KG_FIRMWARE_VERSION);
+  Serial.print(" (built " __DATE__ " " __TIME__ ")");
+  Serial.println();
 
   // --- Initialize subsystems ---
 
