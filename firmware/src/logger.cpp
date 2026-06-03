@@ -16,8 +16,10 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SdFat.h>
+#include <string.h>
 
 #include "log_format.h"
+#include "version.h"
 #include "gps.h"
 
 namespace {
@@ -172,6 +174,9 @@ bool start() {
   hdr.version     = KG_LOG_VERSION;
   hdr.hardware_id = KG_HARDWARE_BREADBOARD_V0;
   hdr.session_id  = currentSessionId;
+  // Stamp the firmware version so each log self-identifies which build wrote
+  // it. strncpy zero-pads; hdr is already zero-initialized above.
+  strncpy(hdr.fw_version, KG_FIRMWARE_VERSION, sizeof(hdr.fw_version));
   // start_unix_us left as 0 — a TIME record will anchor it once GPS has time.
   if (!writeBytes((const uint8_t*)&hdr, sizeof(hdr))) {
     file.close();

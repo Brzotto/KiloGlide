@@ -45,18 +45,23 @@ def parse_file(path):
 
     # Parse header
     hdr = struct.unpack(HEADER_FMT, raw[:32])
-    magic, version, hw_id, session_id, start_unix_us, reserved = hdr
+    magic, version, hw_id, session_id, start_unix_us, fw_version_raw = hdr
 
     if magic != MAGIC:
         return None, f"Bad magic: {magic:#010x}"
     if version != 1:
         return None, f"Unsupported version: {version}"
 
+    # Firmware version string lives in the (formerly reserved) trailing 12 header
+    # bytes, null-padded. Logs written before firmware stamped it read as empty.
+    fw_version = fw_version_raw.split(b"\x00")[0].decode("ascii", "replace")
+
     header_info = {
         "session_id": session_id,
         "version": version,
         "hardware_id": hw_id,
         "start_unix_us": start_unix_us,
+        "fw_version": fw_version,
         "file_size": len(raw),
     }
 

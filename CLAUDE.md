@@ -125,5 +125,7 @@ Firmware: use Arduino framework conventions.
 - docs/README_analysis.md — how to run the analysis pipeline on a new session
 - docs/handoff_2026-05-23.md — handoff from the session 37 pipeline build
 - docs/handoff_2026-05-23_glide.md — handoff from the glide-analysis session
+- docs/connection_test_protocol.md — on-water A/B protocol for the connection-usefulness test
+- docs/handoff_2026-06-03_connection.md — handoff for the connection-usefulness phase
 - analysis/session_37_report.md — first water-test report
 - analysis/session_37_status_and_next_session.md — what's working and what's needed next

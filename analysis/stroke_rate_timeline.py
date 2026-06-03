@@ -177,9 +177,15 @@ def main(argv=None):
     inst_cad = 60.0 / intervals                   # strokes per minute
     mid_t = 0.5 * (stroke_t[:-1] + stroke_t[1:])  # value placed at the midpoint
 
-    # On-water paddling window (launch -> takeout) from GPS.
-    win_t0, win_t1 = find_paddling_window(
-        kg["gps_t"], kg["gps_speed"], args.move_thresh, args.move_smooth)
+    # On-water paddling window (launch -> takeout) from GPS. With no GPS fix
+    # (e.g. an indoor session) fall back to the whole IMU span instead of an
+    # empty window.
+    if len(kg["gps_t"]) < 5:
+        win_t0, win_t1 = float(t[0]), float(t[-1])
+        print("  No GPS available — using the whole IMU session as the window.")
+    else:
+        win_t0, win_t1 = find_paddling_window(
+            kg["gps_t"], kg["gps_speed"], args.move_thresh, args.move_smooth)
     window_min = (win_t1 - win_t0) / 60.0
     print(f"  Paddling window: {win_t0/60.0:.1f}-{win_t1/60.0:.1f} min "
           f"({window_min:.1f} min on the water)")

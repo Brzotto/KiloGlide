@@ -63,7 +63,11 @@ struct __attribute__((packed)) KgFileHeader {
   uint32_t session_id;       // Monotonic; matches filename suffix
   uint64_t start_unix_us;    // Unix µs at session start, 0 if not yet known.
                              // A later TIME record provides the anchor if so.
-  uint8_t  reserved[12];     // Pad to 32 bytes, reserved for future use
+  char     fw_version[12];   // Firmware version string (KG_FIRMWARE_VERSION),
+                             // null-padded. Repurposed from the old reserved[12]
+                             // field — logs written before this was populated
+                             // read as all-zero (empty string), so they stay
+                             // readable. Pads the header to 32 bytes.
 };
 static_assert(sizeof(KgFileHeader) == 32, "KgFileHeader must be 32 bytes");
 

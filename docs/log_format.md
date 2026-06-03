@@ -51,7 +51,7 @@ Filename convention: `kg_NNNNNN.bin` where `NNNNNN` is the zero-padded `session_
 | 6 | `hardware_id` | u16 | `1` = breadboard v0. Reserved for future hardware revisions. |
 | 8 | `session_id` | u32 | Monotonic across sessions; matches filename. |
 | 12 | `start_unix_us` | u64 | Unix microseconds at session start. `0` if GPS time wasn't available yet — a later `TIME` record will provide the anchor. |
-| 20 | `reserved[12]` | bytes | Zero. Reserved for future use. |
+| 20 | `fw_version[12]` | char | Firmware version string (e.g. `0.3.0`), null-padded. Repurposed from the old `reserved[12]`; logs written before this was populated read as all-zero (empty string), so they remain readable. |
 | 32 | — end — | | |
 
 Python `struct` format string: `<I H H I Q 12s`
@@ -237,7 +237,7 @@ SYNC  = 0xAA55
 def parse(path):
     with open(path, "rb") as f:
         header = struct.unpack(HEADER_FMT, f.read(32))
-        magic, version, hw_id, session_id, start_unix_us, _ = header
+        magic, version, hw_id, session_id, start_unix_us, fw_version = header
         assert magic == MAGIC, f"bad magic {magic:#x}"
         assert version == 1, f"unsupported version {version}"
 
