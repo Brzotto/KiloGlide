@@ -48,6 +48,14 @@ bool init() {
   configOk &= dev.setI2COutput(COM_TYPE_UBX);
   configOk &= dev.setNavigationFrequency(NAV_RATE_HZ);
 
+  // Sea dynamic model: a paddle craft is low, slow, and has ~zero vertical
+  // motion. This tells the receiver's internal velocity Kalman filter to expect
+  // boat-like dynamics instead of the default Portable model (which allows
+  // car/running accelerations), reducing ground-speed jitter. The library
+  // default layer is RAM+BBR, so this persists via the breakout's coin cell and
+  // is also reapplied here on every boot.
+  configOk &= dev.setDynamicModel(DYN_MODEL_SEA);
+
   // Save the I/O port config to battery-backed RAM so it survives a power
   // cycle. (Coin cell on the breakout keeps this alive.)
   configOk &= dev.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
