@@ -29,7 +29,8 @@ class SessionConfig:
     session_id: int
     date: str
     kg_path: str
-    tcx_path: Optional[str]
+    garmin_path: Optional[str]  # Garmin activity file (.fit or .tcx), whichever the manifest gives
+    tcx_path: Optional[str]     # backward-compatible alias for garmin_path
     nk_path: Optional[str]
     plots_dir: str
     location: str
@@ -40,6 +41,8 @@ class SessionConfig:
     notes: str
     summary_narrative: list
     compare_laps: list  # [{idx, label, color}, ...] for cross-lap comparison plots
+    exclude_laps: list  # lap indices to drop from summaries (rests, anomalies)
+    adaptive_strokes: bool  # gate-adaptive weak-stroke detection (off = legacy fixed threshold)
 
 
 def _load_manifest():
@@ -66,7 +69,9 @@ def get_session(session_id=None) -> SessionConfig:
 
     s = manifest["sessions"][key]
     kg_path = os.path.join(DATA_DIR, s["kg_file"])
-    tcx_path = os.path.join(DATA_DIR, s["garmin_tcx"]) if s.get("garmin_tcx") else None
+    # Garmin activity: accept either a .fit ("garmin_fit") or .tcx ("garmin_tcx").
+    garmin_file = s.get("garmin_fit") or s.get("garmin_tcx")
+    garmin_path = os.path.join(DATA_DIR, garmin_file) if garmin_file else None
     nk_path = os.path.join(DATA_DIR, s["nk_speedcoach"]) if s.get("nk_speedcoach") else None
     plots_dir = os.path.join(PLOTS_ROOT, f"session_{session_id}")
     os.makedirs(plots_dir, exist_ok=True)
@@ -75,7 +80,8 @@ def get_session(session_id=None) -> SessionConfig:
         session_id=session_id,
         date=s["date"],
         kg_path=kg_path,
-        tcx_path=tcx_path,
+        garmin_path=garmin_path,
+        tcx_path=garmin_path,  # alias kept so existing callers using cfg.tcx_path still work
         nk_path=nk_path,
         plots_dir=plots_dir,
         location=s["location"],
@@ -86,6 +92,8 @@ def get_session(session_id=None) -> SessionConfig:
         notes=s["notes"],
         summary_narrative=s.get("summary_narrative", []),
         compare_laps=s.get("compare_laps", []),
+        exclude_laps=s.get("exclude_laps", []),
+        adaptive_strokes=bool(s.get("adaptive_strokes", False)),
     )
 
 

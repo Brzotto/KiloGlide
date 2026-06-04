@@ -6,8 +6,13 @@ Quick reference for processing the data after each on-water session.
 
 After paddling, you'll have:
 1. `kg_000XYZ.bin` — KG binary log from the microSD card
-2. `activity_NNN.tcx` — Garmin TCX export (optional but recommended)
-3. Possibly an NK SpeedCoach export (not yet wired in)
+2. A Garmin activity export — either `activity_NNN.tcx` **or** the native
+   `NNN_ACTIVITY.fit` from Garmin Connect (optional but recommended). The
+   pipeline reads both; `.fit` is what Garmin downloads by default.
+3. Optionally an NK SpeedCoach CSV export (see the SpeedCoach section below)
+
+Python dependencies: `numpy`, `scipy`, `matplotlib`, and `fitparse`
+(`pip install fitparse`, only needed when the Garmin export is a `.fit`).
 
 ## Step 1 — Copy the raw data
 
@@ -16,7 +21,8 @@ Drop both files into `analysis/data/`:
 ```
 analysis/data/
   kg_000038.bin              ← from microSD
-  activity_22999999999.tcx   ← from Garmin Connect
+  activity_22999999999.tcx   ← from Garmin Connect (TCX export)
+  23129109922_ACTIVITY.fit   ← or the native FIT download
 ```
 
 ## Step 2 — Add a session entry to the manifest
@@ -28,6 +34,7 @@ Edit `analysis/data/sessions.json`. Append a new session under `"sessions"`:
   "date": "2026-06-XX",
   "kg_file": "kg_000038.bin",
   "garmin_tcx": "activity_22999999999.tcx",
+  "garmin_fit": null,
   "nk_speedcoach": null,
   "location": "Alameda Bay, CA",
   "boat": "OC1",
@@ -36,9 +43,26 @@ Edit `analysis/data/sessions.json`. Append a new session under `"sessions"`:
   "conditions": "describe wind / chop / current here",
   "notes": "anything unusual about this session",
   "compare_laps": [],
+  "exclude_laps": [],
+  "adaptive_strokes": false,
   "summary_narrative": []
 }
 ```
+
+Use `garmin_tcx` **or** `garmin_fit` depending on what you exported — set the
+one you have and leave the other `null` (or omit it). `exclude_laps` is an
+optional list of lap indices to drop from the summaries (rests, anomalies,
+a lap where you stopped to adjust the mount).
+
+`adaptive_strokes` (default `false`) controls weak-stroke detection. With the
+fixed default threshold, very soft strokes (e.g. a deliberately weak or injured
+side) accelerate the boat too little to register, so KG counts fewer strokes
+than Garmin on those pieces — by design, KG measures boat *thrust*, not arm
+cadence. Setting `adaptive_strokes: true` lowers the detection threshold
+adaptively to the signal's own amplitude **while the boat is moving** (GPS-speed
+gated, so drifting rests still read zero). It only ever lowers the bar on weak
+pieces; normal/strong laps are unchanged. Leave it `false` to reproduce the
+legacy fixed-threshold counts (e.g. the session-37 reference).
 
 Optionally update `"default_session"` to the new number so scripts default to it.
 
@@ -80,6 +104,32 @@ python analysis/connected_quick.py --session 38
 ```
 
 Plots land in `analysis/plots/session_38/` — directory is created automatically.
+
+### SpeedCoach comparison (if you have an NK SpeedCoach export)
+
+SpeedCoach is boat-mounted like KG, so it's the right reference for confirming
+KG's speed and stroke data (the Garmin *watch* counts arm cadence, not hull
+motion, so it over-counts on rests/weak strokes).
+
+Workflow:
+1. Drop the SpeedCoach CSV into `analysis/data/`.
+2. Set `"nk_speedcoach": "<filename>.csv"` in the session's manifest entry.
+3. Run:
+
+```bash
+python analysis/speedcoach_report.py --session 38
+```
+
+It prints a data-quality check (KG-vs-SpeedCoach speed correlation, total-stroke
+agreement, verdict) and a per-lap table (strokes / speed / stroke-rate /
+distance-per-stroke, SpeedCoach vs KG), and saves three plots to
+`analysis/plots/session_N/`: `40_speed_vs_time.png`,
+`41_strokerate_vs_time.png`, `42_per_lap_bars.png`. The report aligns the
+SpeedCoach to KG (the two devices are usually started a few seconds apart) and
+trims the acceleration ramp before averaging, so per-lap mean speeds are
+comparable — KG agrees with the SpeedCoach to within hundredths of an mph on
+piece averages. KG's *instantaneous* speed is noisier (a jumpy single-sample
+max), so for a true peak speed use a smoothed value or the SpeedCoach.
 
 ## Step 4 — Write the narrative
 

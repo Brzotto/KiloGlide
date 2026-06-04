@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from correlate_kg_garmin import (
-    load_kg, load_tcx, align_kg_to_garmin, detect_imu_axes,
+    load_kg, load_garmin, align_kg_to_garmin, detect_imu_axes,
     rotate_accel, detect_strokes, lap_local_window,
 )
 from session_config import get_session_from_args, get_compare_laps
@@ -39,7 +39,7 @@ def main():
     cfg = get_session_from_args()
     print(f"Loading session {cfg.session_id}...")
     kg = load_kg(cfg.kg_path)
-    tcx = load_tcx(cfg.tcx_path)
+    tcx = load_garmin(cfg.garmin_path)
     PLOTS_DIR = cfg.plots_dir
     align = align_kg_to_garmin(kg, tcx)
     R, _ = detect_imu_axes(kg)

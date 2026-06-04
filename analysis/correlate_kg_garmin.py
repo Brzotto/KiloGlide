@@ -209,6 +209,134 @@ def load_tcx(path):
     }
 
 
+# Semicircles -> degrees. FIT stores lat/lon as int32 semicircles.
+_SEMICIRCLE_TO_DEG = 180.0 / 2**31
+
+
+def _fit_utc(d):
+    """fitparse returns naive datetimes that are already UTC. Stamp them as
+    UTC before .timestamp() so we don't accidentally use the local zone."""
+    if d is None:
+        return np.nan
+    return d.replace(tzinfo=dt.timezone.utc).timestamp()
+
+
+def _fit_fields(m):
+    """Flatten a FIT message to {name: value}, keeping the first non-None value
+    when a field name repeats (Garmin emits e.g. enhanced_max_speed twice, native
+    then a developer copy that is often None — a plain dict comp would keep None)."""
+    out = {}
+    for d in m:
+        if d.value is None:
+            out.setdefault(d.name, None)
+        elif out.get(d.name) is None:
+            out[d.name] = d.value
+    return out
+
+
+def load_fit(path):
+    """Parse a Garmin .fit activity into the same dict structure as load_tcx().
+
+    Garmin Connect's native download is FIT; this lets the pipeline read it
+    directly instead of requiring a TCX conversion. Uses 'record' messages for
+    the per-trackpoint track (timestamp, enhanced_speed, distance, position,
+    heart_rate) and 'lap' messages for manual lap-press boundaries.
+    """
+    from fitparse import FitFile  # lazy import: only needed for .fit inputs
+
+    fit = FitFile(path)
+
+    # --- per-record track -------------------------------------------------
+    all_t, all_speed, all_dist, all_lat, all_lon, all_hr = [], [], [], [], [], []
+    for m in fit.get_messages("record"):
+        f = _fit_fields(m)
+        t = f.get("timestamp")
+        if t is None:
+            continue
+        all_t.append(_fit_utc(t))
+        # Prefer enhanced_speed (m/s); fall back to plain speed; else NaN.
+        spd = f.get("enhanced_speed", f.get("speed"))
+        all_speed.append(float(spd) if spd is not None else np.nan)
+        d = f.get("distance")
+        all_dist.append(float(d) if d is not None else np.nan)
+        la = f.get("position_lat")
+        lo = f.get("position_long")
+        all_lat.append(la * _SEMICIRCLE_TO_DEG if la is not None else np.nan)
+        all_lon.append(lo * _SEMICIRCLE_TO_DEG if lo is not None else np.nan)
+        hr = f.get("heart_rate")
+        all_hr.append(float(hr) if hr is not None else np.nan)
+
+    t_arr = np.array(all_t, dtype=np.float64)
+    order = np.argsort(t_arr)
+    t_arr = t_arr[order]
+    spd_arr = np.array(all_speed, dtype=np.float64)[order]
+    dist_arr = np.array(all_dist, dtype=np.float64)[order]
+    lat_arr = np.array(all_lat, dtype=np.float64)[order]
+    lon_arr = np.array(all_lon, dtype=np.float64)[order]
+    hr_arr = np.array(all_hr, dtype=np.float64)[order]
+
+    # Same speed-recovery policy as load_tcx: derive from distance if mostly missing.
+    nan_frac = float(np.mean(np.isnan(spd_arr))) if spd_arr.size else 1.0
+    if nan_frac > 0.5 and not np.all(np.isnan(dist_arr)):
+        dd = np.diff(dist_arr)
+        dt_arr = np.diff(t_arr)
+        derived = np.where(dt_arr > 0, dd / np.maximum(dt_arr, 1e-3), 0)
+        spd_arr = np.concatenate([[0.0], derived])
+    spd_arr = np.where(np.isnan(spd_arr), 0.0, spd_arr)
+
+    # --- laps (manual presses) -------------------------------------------
+    laps = []
+    for i, m in enumerate(fit.get_messages("lap")):
+        f = _fit_fields(m)
+        start = _fit_utc(f.get("start_time"))
+        dur = f.get("total_elapsed_time") or f.get("total_timer_time") or 0.0
+        dist_m = f.get("total_distance") or 0.0
+        max_spd = f.get("enhanced_max_speed") or f.get("max_speed") or 0.0
+        # Records whose timestamp falls within [start, start+dur) belong to this lap.
+        in_lap = (t_arr >= start) & (t_arr < start + float(dur))
+        laps.append({
+            "idx": i + 1,
+            "start_utc": start,
+            "duration_s": float(dur),
+            "distance_m": float(dist_m),
+            "max_speed_m_s": float(max_spd),
+            "track_t": t_arr[in_lap].copy(),
+            "track_dist": dist_arr[in_lap].copy(),
+        })
+
+    # --- activity start ---------------------------------------------------
+    activity_start = np.nan
+    for m in fit.get_messages("session"):
+        f = _fit_fields(m)
+        activity_start = _fit_utc(f.get("start_time"))
+        break
+    if np.isnan(activity_start) and t_arr.size:
+        activity_start = float(t_arr[0])
+
+    return {
+        "t": t_arr,
+        "speed": spd_arr,
+        "dist": dist_arr,
+        "lat": lat_arr,
+        "lon": lon_arr,
+        "hr": hr_arr,
+        "laps": laps,
+        "activity_start_utc": activity_start,
+    }
+
+
+def load_garmin(path):
+    """Load a Garmin activity by extension: .fit -> load_fit, else load_tcx.
+
+    Returns the common track+lap dict that the rest of the pipeline consumes,
+    so callers don't care which format Garmin Connect handed them."""
+    if path is None:
+        raise ValueError("No Garmin file path provided for this session.")
+    if str(path).lower().endswith(".fit"):
+        return load_fit(path)
+    return load_tcx(path)
+
+
 # ------------------------------------------------------------------
 # Phase 1 — time alignment via GPS speed cross-correlation
 # ------------------------------------------------------------------
@@ -651,12 +779,23 @@ def _bandpass(y, fs, lo=0.5, hi=3.0, order=2):
 
 
 def detect_strokes(t, fwd_accel, prominence=1.0, height=0.5, refractory_s=0.4,
-                   use_bandpass=True):
+                   use_bandpass=True, adaptive=False, adaptive_k=1.3,
+                   adaptive_floor=0.7):
     """Peak detection on forward accel.
 
     Uses scipy.signal.find_peaks with both a prominence and an absolute height
     threshold. Prominence handles amplitude variation between cruise and sprint;
     height kills low-level oscillations that pass prominence in slow water.
+
+    Adaptive mode (opt-in, default off so existing callers are unchanged):
+    when a paddler's strokes are unusually weak, their forward-accel peaks fall
+    below the fixed `height`/`prominence` floor and get missed. With
+    `adaptive=True`, the threshold is scaled to the band-passed signal's own
+    amplitude (k * MAD) and CLAMPED to [adaptive_floor, height] — i.e. it can
+    only ever *lower* the bar relative to the caller's `height`, and only when
+    the signal is weak. Strong/normal laps land at `height` and are unchanged.
+    Because a quiet rest looks the same as weak strokes to an amplitude test,
+    callers should gate this on a "boat is moving" signal (see analyze_lap).
 
     Returns list of (time, index) tuples where index is into the input arrays.
     """
@@ -676,6 +815,14 @@ def detect_strokes(t, fwd_accel, prominence=1.0, height=0.5, refractory_s=0.4,
                 signal = fwd_accel
         except Exception:
             signal = fwd_accel
+
+    if adaptive:
+        # Robust amplitude scale (median absolute deviation). Clamp so we never
+        # raise the bar above the caller's height nor drop below the floor.
+        mad = float(np.median(np.abs(signal - np.median(signal))))
+        h = min(height, max(adaptive_floor, adaptive_k * mad))
+        prom = prominence * (h / height) if height > 0 else prominence
+        height, prominence = h, prom
 
     distance = max(1, int(refractory_s / dt))
     peaks, _ = find_peaks(signal, prominence=prominence, height=height,
@@ -957,7 +1104,8 @@ def _side_envelope_metrics(yaw, fs, edge_skip_s=5.0):
 
 
 def analyze_lap(kg, A_body, G_body, lap, align, mass_kg, prominence=1.5,
-                height=1.0, refractory_s=0.4):
+                height=1.0, refractory_s=0.4, adaptive=False,
+                adaptive_gate_mps=1.1, adaptive_k=1.3, adaptive_floor=0.7):
     t0, t1 = lap_local_window(lap, align)
     t = kg["imu_t"]
     m = (t >= t0) & (t <= t1)
@@ -969,8 +1117,20 @@ def analyze_lap(kg, A_body, G_body, lap, align, mass_kg, prominence=1.5,
     yaw_seg = G_body[m, 2]
     fs = _estimate_fs(tt)
     side_metrics = _side_envelope_metrics(yaw_seg, fs)
+
+    # Gate adaptive (weak-stroke) detection on GPS speed: only lower the
+    # detection threshold when the boat is actually moving. A drifting rest has
+    # the same low signal amplitude as weak strokes, so without this gate the
+    # adaptive floor would manufacture phantom strokes out of rest noise.
+    gt, gv = kg["gps_t"], kg["gps_speed"]
+    gm = (gt >= t0) & (gt <= t1)
+    mean_speed = float(np.mean(gv[gm])) if np.any(gm) else float("nan")
+    use_adaptive = bool(adaptive and np.isfinite(mean_speed)
+                        and mean_speed >= adaptive_gate_mps)
+
     strokes = detect_strokes(tt, fwd, prominence=prominence, height=height,
-                              refractory_s=refractory_s)
+                              refractory_s=refractory_s, adaptive=use_adaptive,
+                              adaptive_k=adaptive_k, adaptive_floor=adaptive_floor)
     feats = stroke_features_for_window(tt, fwd, roll, strokes, mass_kg)
     if len(feats) < 2:
         return {"lap": lap, "feats": feats, "cadence_spm": 0.0, "n_strokes": len(feats)}
@@ -979,11 +1139,7 @@ def analyze_lap(kg, A_body, G_body, lap, align, mass_kg, prominence=1.5,
     intervals = np.diff(times)
     cadence = 60.0 / np.median(intervals) if len(intervals) > 0 else 0.0
 
-    # GPS mean speed for this lap (KG side)
-    gt = kg["gps_t"]
-    gv = kg["gps_speed"]
-    gm = (gt >= t0) & (gt <= t1)
-    mean_speed = float(np.mean(gv[gm])) if np.any(gm) else float("nan")
+    # mean_speed (GPS, KG side) already computed above for the adaptive gate.
 
     # Distance per stroke (DPS) — paddle-sport gold-standard metric
     duration_s = float(tt[-1] - tt[0]) if len(tt) > 1 else 0.0
