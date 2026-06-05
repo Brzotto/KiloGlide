@@ -121,7 +121,7 @@ Python `struct` format: `<hhhhhh`
 | 18 | `fix_type` | u8 | 0 = none, 2 = 2D, 3 = 3D |
 | 19 | `num_sats` | u8 | |
 | 20 | `hdop_c` | u16 | × 1e-2 → unitless |
-| 22 | `reserved` | u16 | Zero. |
+| 22 | `speed_acc_mm_s` | u16 | × 1e-3 → m/s. u-blox speed-accuracy estimate (sAcc), capped at 65535. **Old logs read `0` here = "unknown"** (repurposed from the former `reserved` pad; a real sAcc is never exactly 0). |
 
 Python `struct` format: `<iiiI H BB H H`
 

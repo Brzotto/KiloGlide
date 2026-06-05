@@ -238,7 +238,9 @@ void writeGps() {
   gp.fix_type   = gps::fixType();
   gp.num_sats   = gps::numSats();
   gp.hdop_c     = 0;       // TODO: add HDOP getter to gps.h
-  gp.reserved   = 0;
+  // sAcc is u32 mm/s from the receiver; cap to the u16 field (~65 m/s, far
+  // above any paddling-relevant accuracy degradation).
+  gp.speed_acc_mm_s = (uint16_t)min(gps::speedAccMmS(), 65535u);
 
   writeRecord(KG_REC_GPS, sessionMs(), &gp, sizeof(gp));
 }

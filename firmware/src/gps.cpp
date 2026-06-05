@@ -28,6 +28,7 @@ double   g_lat       = 0;
 double   g_lon       = 0;
 double   g_alt       = 0;
 double   g_speed     = 0;
+uint32_t g_speedAcc  = 0;
 double   g_heading   = 0;
 bool     g_timeValid = false;
 uint64_t g_unix_us   = 0;
@@ -77,6 +78,11 @@ bool update() {
   g_lon   = dev.getLongitude()    / 1e7;
   g_alt   = dev.getAltitudeMSL() / 1000.0;
   g_speed = dev.getGroundSpeed() / 1000.0;
+  // Speed-accuracy estimate (sAcc) from the same PVT solution, in mm/s. getPVT()
+  // above already pulled the message up, so this just reads the cached field —
+  // no extra I2C traffic. Lets us flag fixes where the velocity solution is
+  // degraded (multipath / poor sky view on the integrated patch antenna).
+  g_speedAcc = dev.getSpeedAccEst();
   g_heading = dev.getHeading() / 100000.0;
   while (g_heading < 0.0) g_heading += 360.0;
   while (g_heading >= 360.0) g_heading -= 360.0;
@@ -103,6 +109,7 @@ double   latitude()          { return g_lat; }
 double   longitude()         { return g_lon; }
 double   altitudeMSL()       { return g_alt; }
 double   groundSpeed()       { return g_speed; }
+uint32_t speedAccMmS()       { return g_speedAcc; }
 double   headingDeg()        { return g_heading; }
 bool     hasValidTime()      { return g_timeValid; }
 uint64_t unixMicroseconds()  { return g_unix_us; }
