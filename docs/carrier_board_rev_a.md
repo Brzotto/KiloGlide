@@ -169,8 +169,8 @@ Suggested assignment:
 |---|---:|---|
 | Power / select | 1 | Existing firmware button input; use diode-isolated sense path if sharing with the power latch |
 | Up / next | 2 | Plain GPIO-to-ground button |
-| Down / previous | 39 | Plain GPIO-to-ground button |
-| Back / mark | 40 | Plain GPIO-to-ground button |
+| Down / previous | 40 | Plain GPIO-to-ground button |
+| Back / mark | 39 | Plain GPIO-to-ground button |
 
 Keep `ESP32_HOLD` separate from the button inputs; suggested `ESP32_HOLD` pins
 are GPIO 18 or GPIO 21.
@@ -254,8 +254,8 @@ Suggested new Rev A uses:
 | 17 | Display EXTCOMIN / display refresh, if needed |
 | 18 or 21 | ESP32_HOLD output for power latch |
 | 2 | Button: Up / next |
-| 39 | Button: Down / previous |
-| 40 | Button: Back / mark |
+| 39 | Button: Back / mark |
+| 40 | Button: Down / previous |
 
 Avoid GPIO 0, 3, 45, and 46 for normal peripherals because they are ESP32-S3
 strapping pins. Avoid GPIO 19 and 20 because they are native USB. Leave GPIO 43
