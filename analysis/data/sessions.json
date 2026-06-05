@@ -1,6 +1,28 @@
 {
   "default_session": 37,
   "sessions": {
+    "42": {
+      "date": "2026-06-04",
+      "kg_file": "kg_000042.bin",
+      "garmin_fit": "23129109922_ACTIVITY.fit",
+      "garmin_tcx": null,
+      "nk_speedcoach": "SpdCoach 2669512 20260604 0535AM.csv",
+      "location": "Alameda Bay, CA",
+      "boat": "OC1 (Ares)",
+      "paddle": "dragon-boat paddle (note: session 37 used an OC paddle)",
+      "system_mass_kg": 85,
+      "mount": "breadboard forward of seat (identical to session 37)",
+      "conditions": "flat, mostly glass water, light tidal current, calm",
+      "notes": "Second on-water test. Dragon-boat paddle (not OC). No 30 s static calibration performed. Workout: ~10 min warmup (lap 1), continuous ~2 min efforts ~9:45-30 min (laps 2-13), then structured set 2x2 min, 6x1 min, 8x30 s pieces alternating sides, started right. Lap structure is 4 presses per cycle: paddle one side -> lap -> REST -> lap -> paddle other side -> lap -> REST -> lap. So in the structured set every other lap is a REST (~50-90 m, ~0 strokes) and is auto-skipped (<10 strokes); the work pieces are the laps with strokes. LEFT-side pieces intentionally weak (finger pain), progressively weaker through the session; cleanest L/R contrast is the 6x1 min block (laps 19-29). NOTE laps 30 (404 s) and 46 (185 s) are long rests/transitions that still contain slow strokes, so don't assume strict work/rest parity past lap 29. 46 Garmin manual lap presses. Garmin export is FIT (sport=stand_up_paddleboarding). SpeedCoach to be added later. Firmware has TIME records -> time-record alignment (xcorr validation r=0.959).",
+      "compare_laps": [
+        {"idx": 23, "label": "L23 1-min RIGHT (strong)", "color": "firebrick"},
+        {"idx": 25, "label": "L25 1-min LEFT (weak)", "color": "steelblue"}
+      ],
+      "exclude_laps": [14, 30, 42, 46],
+      "adaptive_strokes": true,
+      "right_laps": [15, 19, 23, 27, 31, 35, 39, 43],
+      "left_laps": [17, 21, 25, 29, 33, 37, 41, 45]
+    },
     "37": {
       "date": "2026-05-21",
       "kg_file": "kg_000037.bin",
@@ -17,6 +39,7 @@
         {"idx": 3,  "label": "L3 (strong current)", "color": "salmon"},
         {"idx": 13, "label": "L13 (glass water)",   "color": "steelblue"}
       ],
+      "exclude_laps": [14],
       "summary_narrative": [
         "Current estimate ~1.2 mph each way (rough — assumes similar effort both directions). L2 ran 6.7 mph with current, L13 ran 4.3 mph against. Cadences matched (~48 spm) but force differed ~10% (46.4 vs 42.0 lbs), so part of the 2.4 mph gap is real effort variation, not just current. A drift test or NOAA tidal data would tighten this.",
         "Connected stroke % drops in chop. Glass water L13 = 18%, choppy fast laps L2-3 = 6-9%. Same paddler, same cadence — water conditions disrupt catch timing.",

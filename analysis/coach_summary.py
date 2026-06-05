@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from correlate_kg_garmin import (
-    load_kg, load_tcx, align_kg_to_garmin, detect_imu_axes,
+    load_kg, load_garmin, align_kg_to_garmin, detect_imu_axes,
     rotate_accel, rotate_gyro, detect_strokes, lap_local_window,
     analyze_lap,
 )
@@ -32,14 +32,13 @@ from glide_speed_test import lap_median_decay_rate
 
 MS_TO_MPH = 2.23694
 N_TO_LBF = 0.224809
-EXCLUDE_LAPS = {14}
 
 
 def main():
     cfg = get_session_from_args()
     print(f"Loading session {cfg.session_id} ({cfg.date}, {cfg.location})...")
     kg = load_kg(cfg.kg_path)
-    tcx = load_tcx(cfg.tcx_path)
+    tcx = load_garmin(cfg.garmin_path)
     align = align_kg_to_garmin(kg, tcx)
     R, _ = detect_imu_axes(kg)
     A_body = rotate_accel(R, kg["accel_raw"])
@@ -49,11 +48,13 @@ def main():
     laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
 
     # Per-lap headline metrics using analyze_lap (which has Connected %, etc.)
+    exclude_laps = set(cfg.exclude_laps)
     per_lap = {}
     for li in sorted(laps_by_idx.keys()):
-        if li in EXCLUDE_LAPS:
+        if li in exclude_laps:
             continue
-        r = analyze_lap(kg, A_body, G_body, laps_by_idx[li], align, cfg.system_mass_kg)
+        r = analyze_lap(kg, A_body, G_body, laps_by_idx[li], align,
+                        cfg.system_mass_kg, adaptive=cfg.adaptive_strokes)
         if r is None or r["n_strokes"] < 10:
             continue
         per_lap[li] = r

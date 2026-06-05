@@ -60,6 +60,21 @@ def _speed_to_ms(value, unit_label):
     return value * MPH_TO_MS
 
 
+def _dist_to_m(value, unit_label):
+    """Convert a distance in the file's units to metres using the unit label."""
+    u = unit_label.upper()
+    if "MILE" in u:
+        return value * 1609.344
+    if "FEET" in u or "FT" in u:
+        return value * 0.3048
+    if "KM" in u:
+        return value * 1000.0
+    if u.strip() in ("M", "METER", "METERS", "METRE", "METRES"):
+        return value
+    # Default assumption for NK "Miles/Speed" exports: distance miles, DPS feet.
+    return value * 1609.344
+
+
 def _find_section(rows, header_text):
     """Return the index of the first row whose first cell starts with header_text."""
     for i, r in enumerate(rows):
@@ -108,9 +123,13 @@ def load_nk(path):
     i_total = _get(colmap, "total strokes")
     i_lat = _get(colmap, "gps lat.", "gps lat")
     i_lon = _get(colmap, "gps lon.", "gps lon")
+    i_dist = _get(colmap, "distance (gps)", "distance")
+    i_dps = _get(colmap, "distance/stroke (gps)", "distance/stroke")
     speed_unit = units[i_speed] if i_speed is not None and i_speed < len(units) else "MPH"
+    dist_unit = units[i_dist] if i_dist is not None and i_dist < len(units) else "Miles"
+    dps_unit = units[i_dps] if i_dps is not None and i_dps < len(units) else "Feet"
 
-    elapsed, speed, rate, total, lat, lon = [], [], [], [], [], []
+    elapsed, speed, rate, total, lat, lon, dist, dps = ([] for _ in range(8))
     for r in rows[hdr_i + 2:]:
         if not r or not r[0].strip():
             break  # blank line ends the section
@@ -126,6 +145,8 @@ def load_nk(path):
             total.append(float(r[i_total]))
             lat.append(float(r[i_lat]) if i_lat is not None else np.nan)
             lon.append(float(r[i_lon]) if i_lon is not None else np.nan)
+            dist.append(_dist_to_m(float(r[i_dist]), dist_unit) if i_dist is not None else np.nan)
+            dps.append(_dist_to_m(float(r[i_dps]), dps_unit) if i_dps is not None else np.nan)
         except (ValueError, IndexError):
             continue
 
@@ -172,6 +193,8 @@ def load_nk(path):
         "speed_ms": np.array(speed, dtype=np.float64),
         "stroke_rate_spm": np.array(rate, dtype=np.float64),
         "total_strokes": np.array(total, dtype=np.float64),
+        "dist_m": np.array(dist, dtype=np.float64),
+        "dps_m": np.array(dps, dtype=np.float64),
         "lat": np.array(lat, dtype=np.float64),
         "lon": np.array(lon, dtype=np.float64),
         "summary": summary,

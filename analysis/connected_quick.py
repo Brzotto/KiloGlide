@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from correlate_kg_garmin import (
-    load_kg, load_tcx, align_kg_to_garmin, detect_imu_axes,
+    load_kg, load_garmin, align_kg_to_garmin, detect_imu_axes,
     rotate_accel, rotate_gyro, analyze_lap,
 )
 from session_config import get_session_from_args
@@ -21,7 +21,7 @@ def main():
     cfg = get_session_from_args()
     print(f"Loading session {cfg.session_id}...")
     kg = load_kg(cfg.kg_path)
-    tcx = load_tcx(cfg.tcx_path)
+    tcx = load_garmin(cfg.garmin_path)
     align = align_kg_to_garmin(kg, tcx)
     R, _ = detect_imu_axes(kg)
     A_body = rotate_accel(R, kg["accel_raw"])
@@ -39,7 +39,8 @@ def main():
     for li in lap_idxs:
         if li not in laps_by_idx:
             continue
-        r = analyze_lap(kg, A_body, G_body, laps_by_idx[li], align, cfg.system_mass_kg)
+        r = analyze_lap(kg, A_body, G_body, laps_by_idx[li], align,
+                        cfg.system_mass_kg, adaptive=cfg.adaptive_strokes)
         if r is None or r["n_strokes"] < 5:
             continue
         print(f"  {li:2d}  {r['cadence_spm']:4.1f}  {r['mean_speed_m_s']:5.2f}  "

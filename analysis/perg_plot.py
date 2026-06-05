@@ -1,18 +1,25 @@
 """
-Session 37 — PERG-style per-stroke force curve display.
+PERG-style per-stroke force curve display.
 
 Concept2 PM5 / RowPro style: each individual stroke as its own force trace,
 either in a small-multiples grid or overlaid on a common phase axis. Lets
 you see stroke-by-stroke shape variation in a way that's lost in the
-mean-curve view.
+mean-curve view. Positive force = pull (blade in water); negative force =
+recovery / glide (blade out, only drag decelerating the boat).
 
-Produces two plots:
-  20_perg_grid.png    — 12-20 individual strokes in a small-multiples grid
-  20_perg_overlay.png — same strokes overlaid with mean line on top
+Session-aware: takes --session N (manifest default otherwise) and --lap N
+(auto-picks the lap with the most strokes if omitted). Output filenames carry
+the lap number so you can render several laps and compare them side by side.
+
+Produces three plots per lap, under analysis/plots/session_N/:
+  20_perg_grid_lapL.png        — individual strokes in a small-multiples grid
+  20_perg_overlay_lapL.png     — same strokes overlaid with mean line on top
+  20_perg_pm5_strict_lapL.png  — positive-only "pull arch" (PM5 convention)
 """
 
 import os
 import sys
+import argparse
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -22,21 +29,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from correlate_kg_garmin import (
-    load_kg, load_tcx, align_kg_to_garmin, detect_imu_axes,
+    load_kg, load_garmin, align_kg_to_garmin, detect_imu_axes,
     rotate_accel, rotate_gyro, lap_local_window, detect_strokes,
     stroke_features_for_window,
-    KG_PATH, TCX_PATH, PLOTS_DIR, SYSTEM_MASS_KG,
 )
+from session_config import get_session, add_session_arg
 
 
-def collect_clean_strokes(kg, R, tcx, align, lap_idx=2,
-                          skip_start_s=60.0, max_strokes=20):
-    """Return the first N strokes from a mid-lap window of `lap_idx`."""
+def _strokes_in_lap(kg, R, lap, align, skip_start_s, mass_kg, max_strokes=None):
+    """Detect strokes in a mid-lap window and return their feature dicts."""
     A_body = rotate_accel(R, kg["accel_raw"])
     G_body = rotate_gyro(R, kg["gyro_raw"])
     t = kg["imu_t"]
-    laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
-    lap = laps_by_idx[lap_idx]
     lt0, lt1 = lap_local_window(lap, align)
     w0 = lt0 + skip_start_s
     w1 = lt1
@@ -45,11 +49,40 @@ def collect_clean_strokes(kg, R, tcx, align, lap_idx=2,
     fwd = A_body[m, 0]
     roll = G_body[m, 0]
     strokes = detect_strokes(tt, fwd, prominence=1.5, height=1.0, refractory_s=0.4)
-    feats = stroke_features_for_window(tt, fwd, roll, strokes, SYSTEM_MASS_KG)
-    return feats[:max_strokes]
+    feats = stroke_features_for_window(tt, fwd, roll, strokes, mass_kg)
+    return feats if max_strokes is None else feats[:max_strokes]
 
 
-def plot_perg_grid(feats, savepath, n_show=16):
+def pick_best_lap(kg, R, tcx, align, mass_kg, exclude=()):
+    """Auto-pick the lap with the most detected strokes (a good PERG sample).
+    Short pieces use a smaller skip so we don't discard the whole window."""
+    best_idx, best_n = None, -1
+    for lap in tcx["laps"]:
+        if lap["idx"] in exclude:
+            continue
+        skip = 10.0 if lap["duration_s"] < 90 else 60.0
+        n = len(_strokes_in_lap(kg, R, lap, align, skip, mass_kg))
+        if n > best_n:
+            best_idx, best_n = lap["idx"], n
+    return best_idx
+
+
+def collect_clean_strokes(kg, R, tcx, align, mass_kg, lap_idx,
+                          skip_start_s=60.0, max_strokes=20):
+    """Return N consecutive strokes from a mid-lap window of `lap_idx`.
+
+    Drops the first detected stroke: its window starts at the clip boundary
+    (no left neighbor to take a midpoint from), so its phase is distorted and
+    it shows up "out of phase" in the overlay. Dropping it removes that
+    edge artifact so every plotted stroke is bounded by real inter-stroke troughs.
+    """
+    laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
+    lap = laps_by_idx[lap_idx]
+    feats = _strokes_in_lap(kg, R, lap, align, skip_start_s, mass_kg)
+    return feats[1:max_strokes + 1]
+
+
+def plot_perg_grid(feats, savepath, mass_kg, title_suffix="", n_show=16):
     """Small-multiples grid of individual stroke force curves."""
     n = min(n_show, len(feats))
     if n == 0:
@@ -58,7 +91,7 @@ def plot_perg_grid(feats, savepath, n_show=16):
     rows = (n + cols - 1) // cols
     fig, axes = plt.subplots(rows, cols, figsize=(14, 2.4 * rows),
                               sharex=True, sharey=True)
-    axes = axes.flatten()
+    axes = np.atleast_1d(axes).flatten()
 
     # Common scale across all panels
     all_force = []
@@ -66,7 +99,7 @@ def plot_perg_grid(feats, savepath, n_show=16):
         seg = f.get("fwd_segment")
         if seg is None:
             continue
-        all_force.append(seg * SYSTEM_MASS_KG)
+        all_force.append(seg * mass_kg)
     if not all_force:
         return
     f_max = max([np.max(np.maximum(c, 0)) for c in all_force]) * 1.1
@@ -77,7 +110,7 @@ def plot_perg_grid(feats, savepath, n_show=16):
         if seg is None:
             ax.set_visible(False)
             continue
-        force = seg * SYSTEM_MASS_KG
+        force = seg * mass_kg
         t_seg = f.get("time_segment")
         if t_seg is None or len(t_seg) != len(force):
             t_seg = np.linspace(0, f.get("duration_s", 1.0), len(force))
@@ -108,7 +141,8 @@ def plot_perg_grid(feats, savepath, n_show=16):
     for r in range(rows):
         axes[r * cols].set_ylabel("Force (N)")
 
-    fig.suptitle("Per-stroke force curves — Concept2 PM5 / PERG style\n"
+    fig.suptitle("Per-stroke force curves — Concept2 PM5 / PERG style"
+                 f"{title_suffix}\n"
                  "Blue band = pull (force > 0, blade in water).  "
                  "Yellow band = glide/recovery (force < 0, only drag).",
                  fontsize=11)
@@ -117,7 +151,7 @@ def plot_perg_grid(feats, savepath, n_show=16):
     plt.close(fig)
 
 
-def plot_perg_overlay(feats, savepath, n_show=20):
+def plot_perg_overlay(feats, savepath, mass_kg, title_suffix="", n_show=20):
     """Overlay individual stroke force curves on a common phase axis."""
     n = min(n_show, len(feats))
     if n == 0:
@@ -132,7 +166,7 @@ def plot_perg_overlay(feats, savepath, n_show=20):
         seg = f.get("fwd_segment")
         if seg is None or len(seg) < 5:
             continue
-        force = seg * SYSTEM_MASS_KG
+        force = seg * mass_kg
         c = np.interp(np.linspace(0, 1, n_points),
                       np.linspace(0, 1, len(force)), force)
         curves.append(c)
@@ -147,7 +181,7 @@ def plot_perg_overlay(feats, savepath, n_show=20):
     axes[0].axhline(0, color="gray", linewidth=0.5, linestyle="--")
     axes[0].set_xlabel("Stroke phase (%)")
     axes[0].set_ylabel("Effective drive force (N)")
-    axes[0].set_title(f"Overlay — {len(curves)} consecutive strokes (mid-lap 2)")
+    axes[0].set_title(f"Overlay — {len(curves)} consecutive strokes{title_suffix}")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend(ncol=4, fontsize=7, loc="lower right")
 
@@ -174,7 +208,7 @@ def plot_perg_overlay(feats, savepath, n_show=20):
     plt.close(fig)
 
 
-def plot_pm5_strict(feats, savepath, n_show=20):
+def plot_pm5_strict(feats, savepath, mass_kg, title_suffix="", n_show=20):
     """Concept2-PM5-strict view: clip force to positive only.
 
     Removes the negative tails from the window edges (which are previous- and
@@ -196,7 +230,7 @@ def plot_pm5_strict(feats, savepath, n_show=20):
         if seg is None or len(seg) < 5:
             continue
         # Positive-only clamp — the PM5 force-curve convention
-        force = np.maximum(seg * SYSTEM_MASS_KG, 0.0)
+        force = np.maximum(seg * mass_kg, 0.0)
         c = np.interp(np.linspace(0, 1, n_points),
                       np.linspace(0, 1, len(force)), force)
         curves.append(c)
@@ -217,19 +251,17 @@ def plot_pm5_strict(feats, savepath, n_show=20):
 
     axes[0].set_xlabel("Stroke phase (%)")
     axes[0].set_ylabel("Effective drive force (N) — clipped to ≥ 0")
-    axes[0].set_title(f"PM5-strict positive arch — {len(curves)} consecutive strokes (mid-lap 2)")
+    axes[0].set_title(f"PM5-strict positive arch — {len(curves)} consecutive strokes{title_suffix}")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend()
 
     # Small-multiples grid of the same positive-only strokes
     cols = 5
     rows = (n + cols - 1) // cols
-    sub_axes = axes[1].inset_axes([0, 0, 1, 1])
-    sub_axes.set_visible(False)  # placeholder, replace with proper grid
 
-    # Easier: replace the right panel with a clean grid using gridspec.
+    # Replace the right panel with a clean grid using gridspec.
     axes[1].remove()
-    from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+    from matplotlib.gridspec import GridSpecFromSubplotSpec
     gs = fig.add_gridspec(1, 2, width_ratios=[1, 1])
     right_gs = GridSpecFromSubplotSpec(rows, cols, subplot_spec=gs[0, 1],
                                        wspace=0.15, hspace=0.35)
@@ -243,29 +275,173 @@ def plot_pm5_strict(feats, savepath, n_show=20):
         ax.set_title(f"#{i+1}  {float(np.max(c)):.0f}N", fontsize=8)
         ax.grid(True, alpha=0.2)
 
-    fig.suptitle("Your stroke on its own — recovery glide clipped out so only the pull arch shows.",
+    fig.suptitle("Your stroke on its own — recovery glide clipped out so only the pull arch shows."
+                 f"{title_suffix}",
                  fontsize=11, y=0.995)
     fig.savefig(savepath, dpi=140, bbox_inches="tight")
     plt.close(fig)
 
 
+def _mean_full_curve(feats, mass_kg, n_points=101):
+    """Phase-normalized MEAN force curve over a lap's strokes, keeping the
+    negative (recovery/glide) portion. Returns (curve_lbf, p25, p75) or None."""
+    N_TO_LBF = 0.224809
+    curves = []
+    for f in feats:
+        seg = f.get("fwd_segment")
+        if seg is None or len(seg) < 5:
+            continue
+        force_lbf = seg * mass_kg * N_TO_LBF
+        curves.append(np.interp(np.linspace(0, 1, n_points),
+                                np.linspace(0, 1, len(force_lbf)), force_lbf))
+    if not curves:
+        return None
+    curves = np.array(curves)
+    return (curves.mean(axis=0),
+            np.percentile(curves, 25, axis=0),
+            np.percentile(curves, 75, axis=0))
+
+
+def _shape_metrics(mean_curve):
+    """Technique descriptors from a lap's mean whole-stroke curve (lbf)."""
+    from scipy.signal import find_peaks
+    peak = float(np.max(mean_curve))
+    peak_phase = float(np.argmax(mean_curve))  # 0..100 since 101 points
+    pull_frac = float(np.mean(mean_curve > 0)) * 100.0
+    glide_depth = float(-np.min(mean_curve))   # how hard the boat decelerates
+    pos = np.maximum(mean_curve, 0.0)
+    prom = max(0.5, 0.10 * peak)
+    pk, _ = find_peaks(pos, height=0.10 * peak, prominence=prom, distance=5)
+    n_pos_peaks = int(len(pk))
+    # roughness: normalized curvature energy (jerky strokes score higher)
+    d2 = np.diff(mean_curve, 2)
+    roughness = float(np.sqrt(np.mean(d2 ** 2)) / peak) if peak > 0 else 0.0
+    return dict(peak=peak, peak_phase=peak_phase, pull_frac=pull_frac,
+                glide_depth=glide_depth, n_pos_peaks=n_pos_peaks,
+                roughness=roughness)
+
+
+def overlay_lap_means(kg, R, tcx, align, mass_kg, lap_list, savepath, title,
+                      side_for=None):
+    """Overlay the mean whole-stroke curve (pull + recovery) of several laps
+    on one force axis, and return a per-lap shape-metric table for printing."""
+    laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    colors = plt.cm.turbo(np.linspace(0.05, 0.95, len(lap_list)))
+    rows = []
+    for c, li in zip(colors, lap_list):
+        if li not in laps_by_idx:
+            continue
+        dur = laps_by_idx[li]["duration_s"]
+        skip = 10.0 if dur < 90 else 60.0
+        feats = _strokes_in_lap(kg, R, laps_by_idx[li], align, skip, mass_kg)
+        res = _mean_full_curve(feats, mass_kg)
+        if res is None:
+            continue
+        mean_c, p25, p75 = res
+        phase = np.linspace(0, 100, len(mean_c))
+        sm = _shape_metrics(mean_c)
+        side = side_for.get(li, "?") if side_for else "?"
+        lbl = (f"L{li} {side} {dur:.0f}s  pk{sm['peak']:.0f}lbf "
+               f"pp{sm['peak_phase']:.0f}% np{sm['n_pos_peaks']}")
+        ax.plot(phase, mean_c, color=c, linewidth=2.0, label=lbl)
+        rows.append((li, side, dur, len(feats), sm))
+
+    ax.axhline(0, color="gray", linewidth=0.7, linestyle="--")
+    ax.fill_between([0, 100], 0, ax.get_ylim()[1], color="steelblue", alpha=0.04)
+    ax.set_xlabel("Stroke phase (%)  —  catch → drive → exit → recovery")
+    ax.set_ylabel("Effective drive force (lbf)   (+ pull in water,  − recovery/glide)")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8, loc="best")
+    fig.tight_layout()
+    fig.savefig(savepath, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    return rows
+
+
 def main():
-    kg = load_kg(KG_PATH)
-    tcx = load_tcx(TCX_PATH)
+    p = argparse.ArgumentParser(description=__doc__)
+    add_session_arg(p)
+    p.add_argument("--lap", type=int, default=None,
+                   help="Lap index to render (default: lap with the most strokes)")
+    p.add_argument("--overlay", type=str, default=None,
+                   help="Comma-separated lap indices: overlay their mean "
+                        "whole-stroke curves (pull + recovery) on one axis "
+                        "instead of the per-stroke plots.")
+    p.add_argument("--label", type=str, default="compare",
+                   help="Filename label for --overlay output (default 'compare')")
+    p.add_argument("--skip-start", type=float, default=None,
+                   help="Seconds to skip at lap start before sampling strokes "
+                        "(default: 10 s for short pieces, 60 s otherwise)")
+    p.add_argument("--max-strokes", type=int, default=20,
+                   help="Maximum number of strokes to display (default 20)")
+    args = p.parse_args()
+
+    cfg = get_session(args.session)
+    mass_kg = cfg.system_mass_kg
+    print(f"Loading session {cfg.session_id} ({cfg.date})...")
+    kg = load_kg(cfg.kg_path)
+    tcx = load_garmin(cfg.garmin_path)
     align = align_kg_to_garmin(kg, tcx)
     R, _ = detect_imu_axes(kg)
+    out = cfg.plots_dir
 
-    feats = collect_clean_strokes(kg, R, tcx, align, lap_idx=2,
-                                  skip_start_s=120.0, max_strokes=20)
-    print(f"Collected {len(feats)} consecutive strokes from mid-lap 2.")
+    # --- overlay mode: compare mean whole-stroke curves across laps ----------
+    if args.overlay:
+        from correlate_kg_garmin import analyze_lap
+        A_body = rotate_accel(R, kg["accel_raw"])
+        G_body = rotate_gyro(R, kg["gyro_raw"])
+        lap_list = [int(x) for x in args.overlay.split(",") if x.strip()]
+        laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
+        # Data-driven side label from the slow yaw envelope (reliable at lap level).
+        side_for = {}
+        for li in lap_list:
+            if li in laps_by_idx:
+                r = analyze_lap(kg, A_body, G_body, laps_by_idx[li], align, mass_kg)
+                lf = r.get("left_time_fraction") if r else None
+                side_for[li] = ("L" if lf > 0.5 else "R") if lf is not None else "?"
+        savepath = os.path.join(out, f"21_stroke_overlay_{args.label}.png")
+        title = (f"Session {cfg.session_id} — mean whole-stroke force "
+                 f"(pull + recovery): {args.label}")
+        rows = overlay_lap_means(kg, R, tcx, align, mass_kg, lap_list,
+                                 savepath, title, side_for=side_for)
+        print(f"Saved overlay to {savepath}\n")
+        print("lap side  dur  nstr  peakLbf  peakPhase%  pull%  glideLbf  nPeaks  rough")
+        for li, side, dur, nstr, sm in rows:
+            print("%3d  %s  %4.0f  %4d   %6.1f     %5.0f     %5.0f   %6.1f    %3d    %.3f" % (
+                li, side, dur, nstr, sm["peak"], sm["peak_phase"], sm["pull_frac"],
+                sm["glide_depth"], sm["n_pos_peaks"], sm["roughness"]))
+        return
 
-    plot_perg_grid(feats, os.path.join(PLOTS_DIR, "20_perg_grid.png"),
-                    n_show=16)
-    plot_perg_overlay(feats, os.path.join(PLOTS_DIR, "20_perg_overlay.png"),
-                       n_show=20)
-    plot_pm5_strict(feats, os.path.join(PLOTS_DIR, "20_perg_pm5_strict.png"),
-                     n_show=20)
-    print("Done.")
+    lap_idx = args.lap
+    if lap_idx is None:
+        lap_idx = pick_best_lap(kg, R, tcx, align, mass_kg,
+                                exclude=set(cfg.exclude_laps))
+        print(f"Auto-picked lap {lap_idx} (most strokes).")
+
+    laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
+    if lap_idx not in laps_by_idx:
+        raise SystemExit(f"Lap {lap_idx} not found. Available: "
+                         f"{sorted(laps_by_idx)}")
+    dur = laps_by_idx[lap_idx]["duration_s"]
+    skip = args.skip_start if args.skip_start is not None else (
+        10.0 if dur < 90 else 60.0)
+
+    feats = collect_clean_strokes(kg, R, tcx, align, mass_kg, lap_idx=lap_idx,
+                                  skip_start_s=skip, max_strokes=args.max_strokes)
+    print(f"Collected {len(feats)} consecutive strokes from mid-lap {lap_idx} "
+          f"(skip {skip:.0f} s).")
+
+    suffix = f" (lap {lap_idx})"
+    out = cfg.plots_dir
+    plot_perg_grid(feats, os.path.join(out, f"20_perg_grid_lap{lap_idx}.png"),
+                   mass_kg, title_suffix=suffix, n_show=16)
+    plot_perg_overlay(feats, os.path.join(out, f"20_perg_overlay_lap{lap_idx}.png"),
+                      mass_kg, title_suffix=suffix, n_show=args.max_strokes)
+    plot_pm5_strict(feats, os.path.join(out, f"20_perg_pm5_strict_lap{lap_idx}.png"),
+                    mass_kg, title_suffix=suffix, n_show=args.max_strokes)
+    print(f"Saved 3 PERG plots for lap {lap_idx} to {out}")
 
 
 if __name__ == "__main__":

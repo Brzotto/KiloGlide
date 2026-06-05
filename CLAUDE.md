@@ -28,12 +28,18 @@ Analysis pipeline (`analysis/` directory):
 - `glide_speed_test.py` — within-stroke speed integration + two-tier glide metrics
   (IMU-only Tier 1 = current-independent; GPS-anchored Tier 2 = absolute speed context)
 - `precatch_signature.py` — averaged forward-accel signature revealing pre-catch body motion
-- `stroke_phases.py` — catch / pull / glide annotations + per-stroke quality ranking
-- `perg_plot.py` — Concept2-PM5-style individual stroke force curves
-- `bonus_visualizations.py` — DPS, heart rate, stroke evolution, summary dashboard
-- `lean_and_bursts.py` — boat lean angle + per-burst side analysis + spectral content
-- `side_envelope.py`, `side_rhythm.py`, `side_blocks.py` — L/R side discrimination
+- `perg_plot.py` — Concept2-PM5-style per-stroke force curves; `--overlay` compares mean
+  whole-stroke curves (pull + recovery) across laps
 - `connected_quick.py` — quick Connected % printout for spot-checks
+- `stroke_rate_timeline.py` — whole-session cadence (stroke-rate) timeline
+- `nk_speedcoach.py` (`load_nk`) + `speedcoach_report.py` — NK SpeedCoach loader and the
+  SpeedCoach-vs-KG data-quality + comparison report
+
+This is the full, deliberately-lean script set. The directory was trimmed of redundant
+single-session one-offs (the old `analyze_session`, `bonus_visualizations`, `lean_and_bursts`,
+the `side_*` L/R-exploration scripts, the duplicate connection/speedcoach scripts) — recover
+any from git history if needed. Before adding a NEW analysis script, check what already exists
+and extend it instead of duplicating; keep new scripts session-aware (`--session N`) and general.
 
 Open issues:
 - Per-stroke L/R classification: noise-dominated in cruise water. Lap-level
