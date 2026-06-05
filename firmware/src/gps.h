@@ -36,6 +36,7 @@ double  latitude();       // degrees
 double  longitude();      // degrees
 double  altitudeMSL();    // meters
 double  groundSpeed();    // m/s
+uint32_t speedAccMmS();   // u-blox speed-accuracy estimate (sAcc), mm/s; higher = less trustworthy speed
 double  headingDeg();     // course over ground, degrees clockwise from true north
 
 // True if the most recent fix included valid UTC date and time. GPS modules

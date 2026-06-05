@@ -1,6 +1,16 @@
 # TODO (next session): log GPS quality (speed accuracy) to detect signal contamination
 
-**Status:** planned, not started. Hand this to a future session.
+**Status:** firmware + parser DONE (2026-06-04). The coordinated edit set below
+shipped: `reserved` → `speed_acc_mm_s`, sAcc captured in `gps.cpp`/`gps.h`,
+written in `logger.cpp`, documented in `docs/log_format.md`, parsed in
+`tools/kg_parse.py`. Chose **no version bump** (Option A): the field is
+self-describing (0 = "unknown"), old logs stay readable. Verified: firmware
+builds clean (`KgGpsPayload` still 24 bytes); parser reads the v1 session-42 log
+with 0 CRC errors and reports "not logged (pre-sAcc firmware)".
+
+**Still open:** (1) the on-water acceptance check — needs a fresh log from the
+device showing nonzero `speed_acc_mm_s`; (2) the optional analysis panel in
+`speedcoach_report.py` (see "Analysis follow-up" below).
 
 ## Why
 KG's *instantaneous* GPS ground speed is jittery (single-sample max inflated;

@@ -111,8 +111,12 @@ def parse_file(path):
                 "gx": gx, "gy": gy, "gz": gz,
             })
         elif rtype == 2 and length == 24:  # GPS
-            lat, lon, alt_mm, speed_mm_s, heading_cd, fix_type, num_sats, hdop_c, _ = \
+            lat, lon, alt_mm, speed_mm_s, heading_cd, fix_type, num_sats, hdop_c, speed_acc_mm_s = \
                 struct.unpack(GPS_FMT, payload)
+            # sAcc was added by repurposing the old `reserved` field. Logs
+            # written before then store 0 here, which is not a real accuracy
+            # value, so expose it as None ("unknown") rather than 0.0 m/s.
+            speed_acc = speed_acc_mm_s / 1000.0 if speed_acc_mm_s != 0 else None
             records["gps"].append({
                 "ts": ts,
                 "lat": lat / 1e7, "lon": lon / 1e7,
@@ -121,6 +125,7 @@ def parse_file(path):
                 "heading_deg": heading_cd / 100.0,
                 "fix_type": fix_type, "num_sats": num_sats,
                 "hdop": hdop_c / 100.0,
+                "gps_speed_acc": speed_acc,
             })
         elif rtype == 3 and length == 1:  # Event
             code = struct.unpack(EVENT_FMT, payload)[0]
@@ -222,12 +227,14 @@ def print_summary(path):
         lons = [g["lon"] for g in r["gps"] if g["fix_type"] >= 2]
         fix_types = [g["fix_type"] for g in r["gps"]]
         sats = [g["num_sats"] for g in r["gps"]]
+        speed_accs = [g["gps_speed_acc"] for g in r["gps"] if g.get("gps_speed_acc") is not None]
     else:
         speeds = []
         speed_max = speed_mean = 0
         lats = lons = []
         fix_types = []
         sats = []
+        speed_accs = []
 
     has_clean_end = any(e["code"] == 2 for e in events)
 
@@ -255,6 +262,10 @@ def print_summary(path):
         if sats:
             print(f"  Satellites:      min={min(sats)}  max={max(sats)}  mean={sum(sats)/len(sats):.0f}")
         print(f"  Speed:           mean={speed_mean:.2f}  max={speed_max:.2f} m/s ({speed_max*3.6:.1f} km/h)")
+        if speed_accs:
+            print(f"  Speed accuracy:  min={min(speed_accs):.2f}  max={max(speed_accs):.2f}  mean={sum(speed_accs)/len(speed_accs):.2f} m/s (sAcc)")
+        else:
+            print(f"  Speed accuracy:  not logged (pre-sAcc firmware)")
         if lats:
             print(f"  Position:        lat=[{min(lats):.6f}, {max(lats):.6f}]")
             print(f"                   lon=[{min(lons):.6f}, {max(lons):.6f}]")

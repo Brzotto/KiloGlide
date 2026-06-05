@@ -111,7 +111,11 @@ struct __attribute__((packed)) KgGpsPayload {
   uint8_t  fix_type;    // 0=none, 2=2D, 3=3D
   uint8_t  num_sats;
   uint16_t hdop_c;      // HDOP * 100
-  uint16_t reserved;    // pad to 24 bytes; write zero
+  uint16_t speed_acc_mm_s;  // u-blox speed-accuracy estimate (sAcc), mm/s,
+                            // capped at 65535 (~65 m/s). Repurposed from the
+                            // old `reserved` pad: logs written before this was
+                            // populated read 0 here = "unknown" (a real sAcc is
+                            // never exactly 0), so they stay readable.
 };
 static_assert(sizeof(KgGpsPayload) == 24, "KgGpsPayload must be 24 bytes");
 

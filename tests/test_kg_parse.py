@@ -60,7 +60,7 @@ class KgParseTests(unittest.TestCase):
                 3,
                 12,
                 99,
-                0,
+                250,  # speed_acc_mm_s (sAcc) -> 0.25 m/s
             )),
             record(5, 250, struct.pack(kg_parse.TIME_FMT, 250, 1_700_000_000_123_456)),
             record(3, 300, struct.pack(kg_parse.EVENT_FMT, 2)),
@@ -75,7 +75,17 @@ class KgParseTests(unittest.TestCase):
         self.assertEqual(result["records"]["events"][0]["name"], "SESSION_START")
         self.assertEqual(result["records"]["imu"][0]["az"], 3)
         self.assertAlmostEqual(result["records"]["gps"][0]["speed_m_s"], 4.567)
+        self.assertAlmostEqual(result["records"]["gps"][0]["gps_speed_acc"], 0.25)
         self.assertEqual(result["records"]["time"][0]["unix_us"], 1_700_000_000_123_456)
+
+    def test_gps_speed_acc_zero_reads_as_unknown(self):
+        # Old logs (pre-sAcc firmware) wrote 0 in the repurposed `reserved`
+        # bytes. A real sAcc is never exactly 0, so the parser exposes None.
+        raw = header() + record(2, 100, struct.pack(
+            kg_parse.GPS_FMT, 0, 0, 0, 0, 0, 3, 12, 0, 0))
+        result, err = parse_bytes(raw)
+        self.assertIsNone(err)
+        self.assertIsNone(result["records"]["gps"][0]["gps_speed_acc"])
 
     def test_resyncs_after_bad_crc(self):
         bad = record(3, 100, struct.pack(kg_parse.EVENT_FMT, 3), corrupt_crc=True)
