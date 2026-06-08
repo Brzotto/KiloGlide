@@ -13,4 +13,6 @@
 //           predates versioning, so it is not stamped into logs.
 //   0.4.0 — Print firmware version at boot; stamp it into the log header
 //           (formerly reserved bytes) so every session self-identifies.
-#define KG_FIRMWARE_VERSION "0.4.0"
+//   0.4.1 — GPS "Sea" dynamic model to reduce ground-speed jitter; log the
+//           u-blox speed-accuracy estimate (sAcc) for signal-quality gating.
+#define KG_FIRMWARE_VERSION "0.4.1"
