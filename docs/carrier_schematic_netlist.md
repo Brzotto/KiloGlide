@@ -90,8 +90,8 @@ resistor on a shared bus.
 | 27 | IO_2 | `BTN_UP` | |
 | 28 | IO_42 | `SPARE_1` → TP | |
 | 29 | IO_41 | `SPARE_2` → TP | |
-| 30 | IO_40 | `BTN_BACK` | |
-| 31 | IO_39 | `BTN_DOWN` | |
+| 30 | IO_40 | `BTN_DOWN` | |
+| 31 | IO_39 | `BTN_BACK` | |
 | 32 | IO_38 | NC | onboard RGB LED — add No-ERC marker |
 | 33 | IO_37 | `SPARE_3` → TP | |
 | 34 | IO_36 | `SPARE_4` → TP | |
@@ -221,8 +221,8 @@ pull-ups or debounce.
 | Button | Net | GPIO |
 |---|---|---|
 | Up | `BTN_UP` | 2 |
-| Down | `BTN_DOWN` | 39 |
-| Back / mark | `BTN_BACK` | 40 |
+| Down | `BTN_DOWN` | 40 |
+| Back / mark | `BTN_BACK` | 39 |
 | Power / select | `BTN_SEL` | 1 — **via power latch, not a plain switch** |
 
 `BTN_SEL` (GPIO1) is the diode-isolated sense node in the latch below, not a
