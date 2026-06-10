@@ -65,6 +65,59 @@ Rev A PCB carrier-board notes, including the MAX17048 fuel gauge, bq25185 boost
 
 ---
 
+## External Interface — Charging & Impeller Connector
+
+How power and the external Hall-effect impeller signal cross the waterproof case
+wall. Staged to keep waterproofing off the critical path.
+
+**Rev 1 — sealed USB-C, charge on land.** No external charging contacts. The
+USB-C port sits behind a captive rubber plug/flap with a face gasket; you open
+it to charge on shore and reseal before launching. Lowest-risk waterproofing
+path (a port you open dry beats any always-exposed contact). Decisions for the
+MechE: recess the port in a drainable well so a flap leak pools water *outside*
+the electronics rather than wicking in, keep the flap captive (tethered), and
+treat the flap rubber as a wear item (compression set). Backstops for the
+documented salt-creep failure mode (`docs/data_insights.md`): conformal-coat the
+board + desiccant. Operational rule belongs in
+`docs/on_water_testing_checklist.md`: rinse, dry, then open to charge — never
+with wet/salty hands.
+
+**Impeller — deferred to rev 2.** The external Hall impeller needs an
+always-present waterproof feedthrough (you don't open a flap to plug it in each
+paddle), so it does not fit the rev-1 sealed-USB-C approach. Rev 1 is GPS + IMU
+only. (If the impeller is ever pulled into rev 1, it forces a waterproof
+connector anyway, at which point bundling charge + impeller onto one connector
+becomes attractive — see rev 2.)
+
+**Rev 2 — 4-pin waterproof magnetic connector (charge + impeller on one part).**
+When charge-without-opening and the impeller are wanted, use an IP67/IP68
+magnetic pogo connector. A 4-pin part cleanly separates the functions with no
+mux logic: `CHG+`, `GND`, sensor-supply, impeller-`SIG` (or `CHG+`, `GND`,
+coil-A, coil-B if a passive variable-reluctance coil pickup is used instead of a
+powered Hall switch — the passive pickup removes the DC bias on exposed pins and
+so removes the in-water electrolysis/corrosion driver, at the cost of weak
+low-speed signal needing an analog front-end). Candidate parts: ATTEND 303
+series (e.g. 303D-L236M040 — 4-pin, IP67, 3 A, gold-plated, magnetic, tear-away)
+as a catalog part; Promax or Rapidaccu for custom IP68 pin counts (Alibaba-tier
+MOQ); ODU/Rosenberger/Fischer if production volume justifies it. Prefer a part
+with **flat pads on the device, springs in the cable** (the sliding plunger +
+spring chamber is what wicks brine). Note: a connector's own IP67 rating does
+**not** make the box IP67 at that hole — the connector-to-wall joint is still a
+seal the MechE owns. Tear-away release is a genuine plus on a paddle craft.
+
+**Custom flush "SpeedCoach-style" plated pins — someday cosmetic upgrade.**
+3 solid gold-over-nickel posts sealed through the wall (case-owned), with PCB
+pogo pins landing on the inner faces and cable pogo pins on the outer faces — all
+springs dry, nothing moving in the wet zone. More control over look/layout but
+you + MechE own the IP rating, so it is not on the rev-1 or rev-2 critical path.
+On the legality question: the generic approach (flat pads + magnetic spring
+cable) is industry-wide and not ownable; cloning Garmin's *specific* connector
+geometry to be cross-compatible with Garmin chargers is the part that risks
+design/utility patents and trade dress — buying a generic commercial connector
+sidesteps it entirely. (Not legal advice.)
+
+---
+
 ## Firmware Decisions
 
 - **Framework:** Arduino-ESP32 via PlatformIO (not Arduino IDE, not ESP-IDF)
@@ -126,6 +179,7 @@ NK can't respond quickly — they'd need a board redesign to add a gyroscope. Th
 - WiFi upload / cloud sync — USB cable + SD card is fine
 - BLE phone app
 - ANT+ / Garmin Connect (phase 2-3)
+- External Hall-effect impeller + waterproof charging connector — rev 2 (see External Interface; rev 1 charges via sealed USB-C on land)
 - OTA firmware updates
 - Real-time TSP on-device
 - Multi-paddler / boat-share modes
