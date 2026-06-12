@@ -47,3 +47,7 @@ desktop.ini
 .env
 secrets.h
 .claude/
+
+# LTspice generated outputs (regenerated from the .asc)
+*.raw
+Circuit Simulation/*.net

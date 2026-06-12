@@ -69,7 +69,7 @@ Connections:
 | GND | System ground |
 | SDA | I2C SDA, GPIO 8 |
 | SCL | I2C SCL, GPIO 9 |
-| ALRT | Optional ESP32 GPIO, suggested GPIO 15 |
+| ALRT | Optional ESP32 GPIO, suggested GPIO 47 (a digital pin — keep it off the ADC pins) |
 | QSTRT | GND for Rev A unless firmware-controlled quick-start is needed later |
 | CTG | GND |
 
@@ -91,6 +91,64 @@ External parts and layout notes:
 | QSTRT | Tie to GND for Rev A | Can be driven later if hardware quick-start is needed |
 | CTG | Tie to GND | Datasheet-required connection |
 | Exposed pad | GND | Use vias/stitching if the footprint provides a pad |
+
+## Optional battery temperature sense (DNP, for fuel-gauge temp-comp)
+
+The MAX17048 has no temperature sensor; its `RCOMP` temperature compensation is a
+firmware feature that needs a *battery* temperature reading. v0 ships without
+temp-comp (see `docs/decisions.md`), but leave a populate-if-needed divider so
+adding it later is a firmware-only change, not a respin.
+
+**Sense the cell, not the board.** A board-mounted SMD bead reads PCB / in-case
+temperature — skewed by nearby self-heating (boost, ESP32) and lagging the actual
+cell under load or in sun. For meaningful `RCOMP` comp the element must be in
+thermal contact with the LiPo, so the NTC is an off-board *leaded* part bonded to
+the cell; only the bias resistor and filter cap live on the carrier board.
+
+Circuit (board parts **DNP**; the NTC + connector are added with the battery):
+
+```text
+switched 3.3V ── R_bias 10k ──┬── TEMP_SENSE (to GPIO 2 / ADC1_CH1)
+                              ├── C 100nF ── GND
+                              └──[J_TEMP 2-pin]── NTC 10k (on battery) ── GND
+```
+
+- **NTC:** 10 kΩ-at-25 °C *leaded* thermistor bonded to the cell face. A part like
+  Tewa `TT7-10KC8-3` is the right *type* — a 10 k epoxy bead on insulated leads.
+  Before committing, confirm: the B-value / R–T curve (firmware needs it for the
+  conversion — Tewa's "C8" curve coefficients must match the table in code), lead
+  length reaches the board, and 10 k ± a few % (tolerance is not critical for
+  coarse `RCOMP`).
+- **Connector `J_TEMP`:** 2-pin JST-PH (same family as your battery connector) or
+  solder pads at the board edge for the thermistor leads. Polarity-agnostic — it is
+  a two-terminal resistor.
+- **Mounting:** Kapton tape or a dab of thermal adhesive to the flat face of the
+  pouch, away from the tab/weld area; give the leads a little strain relief.
+- **R_bias (`R14`) / filter cap (`C12`):** 10 kΩ 1 % and the shared 100 nF,
+  board-mounted. **`R14` is DNP on Rev A**, so the divider is dormant — no
+  quiescent draw, and `BATT_TEMP` sits near 0 V. Enable temp-comp later by
+  populating `R14` and attaching the NTC via `J_TEMP`; firmware should treat a
+  near-0 *or* near-full-scale `BATT_TEMP` as "no valid sensor → default RCOMP."
+  Matching R_bias to the NTC's R25 centers sensitivity near room temperature.
+- **Power from the *switched* 3.3 V**, not the always-on battery node — the divider
+  draws ~165 µA only while the unit is on (when temperature is read anyway) and
+  nothing when off.
+- **ADC pin: GPIO 2 (`ADC1_CH1`).** ADC1 is never blocked by the Wi-Fi radio, so
+  this holds up if Wi-Fi is added later. To free GPIO 2 the *Up/next* button moves
+  to GPIO 41 (a digital JTAG pin, like the other nav buttons) and `ALRT` sits on
+  GPIO 47 — the lone analog signal gets the Wi-Fi-immune ADC1 pin; digital signals
+  take plain GPIOs. (A small I²C temp sensor, TMP102-class, on the existing bus is
+  an alternative that needs no ADC pin at all.)
+
+BOM additions (board parts **DNP** on Rev A; the NTC + connector are added with
+the battery):
+
+| Function | Part | JLCPCB part | Package | Notes |
+|---|---|---|---|---|
+| Battery NTC | Tewa TT7-10KC8-3 or equiv. | n/a — off-board | leaded bead | 10 k; confirm β / R–T curve for firmware |
+| Thermistor connector `J_TEMP` | JST `S2B-PH-SM4-TB(LF)(SN)` | verify JLC stock | 2-pin PH, SMT side-entry | Same PH family as the battery; polarity-agnostic |
+| NTC bias resistor `R14` | 10 kΩ 1 % | 0603WAF1002T5E, verify | 0603 | **DNP** on Rev A; board-mounted; matches NTC R25 |
+| NTC filter cap | reuse 100 nF (C1591) | C1591 | 0603 | Board-mounted; shared 0603 part |
 
 ## Pushbutton power latch
 
@@ -146,6 +204,25 @@ Add a 100 nF capacitor from `ESP32_BUTTON` to GND near the ESP32/button-sense
 input. This filters a few-inch waterproof button lead while firmware still does
 normal debounce and long-press timing.
 
+Add a separate 6.8 nF capacitor from `OFF_LATCH` to GND — the latch timing
+capacitor, not the same as the `ESP32_BUTTON` filter above. With the 1 MΩ
+`OFF_LATCH` pull-up it sets the turn-off slope: τ ≈ 6.8 ms, so boost `EN` crosses
+the FET threshold ~3 ms after the button is released (off-on-release, like an NK
+SpeedCoach). Power-on is independent of this cap — the pressed button discharges
+it in well under a microsecond. Keep it small; a large value would both slow the
+deliberate turn-off and defeat the watchdog power-off below.
+
+**Power-off when firmware hangs.** The button can only switch the unit off when
+firmware is alive to drop `ESP32_HOLD`. For the hung case (sealed enclosure, no
+accessible switch), rely on the ESP32 Task Watchdog rather than extra hardware: a
+hang reboots the chip, `ESP32_HOLD` momentarily goes Hi-Z, its 100 kΩ pull-down
+wins, the latch releases, and the small `OFF_LATCH` cap lets the boost collapse
+during the ~200 ms reboot — so a hang ends in a clean power-off and the user
+restarts. For this to work, `ESP32_HOLD` must be on a GPIO that is Hi-Z at reset
+(no internal pull-up), and firmware must feed the watchdog only from the real
+work loop, never a timer/ISR. Rationale and the rejected pushbutton-IC
+alternatives are in `docs/decisions.md`.
+
 ## Buttons
 
 Use four board-mounted right-angle buttons for the product UI. Prefer
@@ -173,7 +250,9 @@ Suggested assignment:
 | Back / mark | 39 | Plain GPIO-to-ground button |
 
 Keep `ESP32_HOLD` separate from the button inputs; suggested `ESP32_HOLD` pins
-are GPIO 18 or GPIO 21.
+are GPIO 18 or GPIO 21. Both are Hi-Z at reset (not strapping, no default
+pull-up), which the watchdog power-off relies on — keep that property if you
+reassign the pin.
 
 ## Sharp memory display
 
@@ -223,6 +302,7 @@ JLC-friendly parts during Rev A planning.
 | 100k resistor | 0603WAF1003T5E | C25803 | 0603 | Good for FET gate pulldown and EN pullup/pulldown as needed |
 | 1M resistor | 0603WAF1004T5E | C22935 | 0603 | Good for low-current BUTTON_RAW/OFF_LATCH pullup |
 | 100 nF capacitor | CL10B104KB8NNNC | C1591 | 0603 | X7R, 50 V, button filter and decoupling |
+| 6.8 nF capacitor | CL10B682KB8NNNC | verify JLC stock | 0603 | `OFF_LATCH` latch timing cap; ~3 ms off-on-release with the 1 MΩ pull-up. X7R fine, C0G for tighter tolerance |
 | Qwiic connector | XY-BM04B-SRSS-TB | C51940129 | SMD, 1 mm pitch | 4-pin vertical JST-SH/Qwiic-compatible connector |
 
 ## ESP32 pin reservations
@@ -249,14 +329,18 @@ Suggested new Rev A uses:
 
 | GPIO | Suggested use |
 |---:|---|
-| 15 | Fuel gauge ALRT, optional |
+| 15 | Spare (ADC2_CH4) |
+| 47 | Fuel gauge ALRT, optional (digital — moved off the ADC pin) |
 | 16 | Display CS |
 | 17 | Display EXTCOMIN / display refresh, if needed |
 | 18 or 21 | ESP32_HOLD output for power latch |
-| 2 | Button: Up / next |
+| 2 | Battery temp-sense (`TEMP_SENSE`), ADC1_CH1, optional/DNP |
+| 41 | Button: Up / next (moved off ADC1 to free GPIO 2 for `TEMP_SENSE`) |
 | 39 | Button: Back / mark |
 | 40 | Button: Down / previous |
 
 Avoid GPIO 0, 3, 45, and 46 for normal peripherals because they are ESP32-S3
-strapping pins. Avoid GPIO 19 and 20 because they are native USB. Leave GPIO 43
-and 44 available for UART0 debug unless there is a strong reason to use them.
+strapping pins. Avoid GPIO 19 and 20 because they are native USB. Avoid GPIO 33–37
+— they are consumed by the in-package octal PSRAM on the N8R8 (broken out on the
+DevKitC header but not usable). Leave GPIO 43 and 44 available for UART0 debug
+unless there is a strong reason to use them.
