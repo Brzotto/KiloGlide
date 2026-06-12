@@ -30,7 +30,7 @@ Running log of project decisions and reasoning. Update this when decisions chang
 | Display (breadboard) | Adafruit SHARP Memory Display Breakout 2.7" 400x240 (PID 4694) | Sunlight readable, SPI, built-in boost converter. Adafruit's library written for this exact board |
 | Display (production) | JDI LPM027M128C color MIP w/ frontlight | Adds color + dawn/dusk visibility, same SPI protocol family |
 | Storage | Adafruit microSD breakout (PID 4682, NOT 254) | 3V-only matches ESP32 directly, supports SPI and SDIO |
-| Power | Adafruit bq25185 USB/DC Charger + 3.3V Buck (PID 5703) | Single board for charging + load sharing + 3.3V regulation, USB-C |
+| Power | Adafruit bq25185 USB/DC Charger (PID 5703) | Charging + load sharing + the 5 V system rail, USB-C. 3.3 V is the DevKitC's onboard LDO output — see Power Architecture |
 | Battery | 2000 mAh LiPo with JST-PH | Updated from 1200 mAh. Target 4+ hour runtime |
 | Buttons | 6mm tactile switches (PID 1489) | Inside case for v0 |
 | Case | Custom waterproof case (in development by collaborator) | Replaces Pelican 1010. Keep Pelican as backup if custom case delays |
@@ -57,11 +57,48 @@ Running log of project decisions and reasoning. Update this when decisions chang
 
 ## Power Architecture
 
-USB-C → bq25185 → 3.3V to ESP32 + peripherals. LCD gets raw LiPo voltage and uses Adafruit breakout's onboard boost to 5V. No external buck-boost needed.
+Battery ↔ bq25185 charger (USB-C). The bq25185 board's regulated output is a **5 V boost rail**, gated by the power-button soft-latch (`BOOST_EN`). 5 V powers the Sharp display directly and feeds the ESP32-S3 DevKitC's `5V` pin; the DevKitC's **onboard LDO** derives the 3.3 V rail for the ESP32 + peripherals — so 3.3 V has a single source (the LDO), not an external regulator. The MAX17048 fuel gauge sits on the always-on battery node.
+
+**Efficiency / future revision:** the 3.3 V rail runs battery → 5 V boost → linear LDO → 3.3 V, ~60% efficient (the LDO burns the 5→3.3 V drop). The display forces a 5 V rail and the bq board outputs only 5 V, so an *efficient* direct 3.3 V would need a battery→3.3 V **buck-boost** (a 1S LiPo swings both above and below 3.3 V). Accepted as-is for v0 to keep the board simple; the buck-boost is the candidate fix for a future revision — it would reclaim ~20% of 3.3 V-rail runtime against the 4-hour target and move the LDO heat out of the sealed case.
 
 Rev A PCB carrier-board notes, including the MAX17048 fuel gauge, bq25185 boost
 `EN` soft-latch, and JLCPCB assembly parts, live in
 `docs/carrier_board_rev_a.md`.
+
+### Power on/off — discrete soft-latch, not a controller IC
+
+**Decision:** keep the discrete pushbutton soft-latch (parts/nets in the
+*Pushbutton power latch* section of `docs/carrier_board_rev_a.md`); do **not**
+add a dedicated pushbutton-controller IC.
+
+- **Why not the IC:** LTC2954 / MAX16150 are functionally ideal but **$5–7 each
+  at our quantities** — not worth it. A Renesas GreenPAK SLG46826 (~$1) matches
+  them and is the upgrade path if a production run later wants a
+  firmware-independent hardware force-off + reset ride-through, but it adds
+  tooling (~$35 dev kit + learning curve). **Deferred.**
+- **Power-off is off-on-release**, like the NK SpeedCoach — hold to shut down,
+  release, it's off. A single-button soft-latch inherently cannot power off
+  *while the button is held* (the held button pulls the latch into the on-state).
+  This is expected behavior, not a limitation.
+- **`OFF_LATCH` timing cap = 6.8 nF.** With the 1 MΩ pull-up, τ ≈ 6.8 ms → rail
+  off ~3 ms after release. Power-on is independent of this cap (the button shorts
+  it down in <1 µs). *Note: this is a separate cap from the 100 nF `ESP32_BUTTON`
+  lead filter; the latch timing cap is currently missing from the carrier-board
+  BOM and should be added.*
+- **Hung-firmware safety = ESP32 Task Watchdog, no extra hardware.** The one
+  failure the button cannot cover is firmware hanging without ever dropping
+  `ESP32_HOLD`. The watchdog reboots a hung chip; on reboot `ESP32_HOLD` drops
+  (GPIO → Hi-Z, its 100 kΩ pull-down wins) and the small `OFF_LATCH` cap lets the
+  boost collapse during the ~200 ms reboot → device powers off, user restarts.
+  Permanent stuck-on in the sealed case is therefore impossible.
+- **Constraints:** `ESP32_HOLD` must use a GPIO that is **Hi-Z at reset**
+  (GPIO 18 or 21 are fine — not strapping, no reset pull-up). Feed the watchdog
+  only from the **real work loop**, never a timer/ISR, or a hang could go
+  undetected.
+
+Schematic/sim: `Circuit Simulation/Power Button.asc` (the sim uses generic `D`
+diodes + `BSZ019N03LS` FETs — substitute BAT54C + BSS138DW models before trusting
+absolute thresholds).
 
 ---
 
@@ -81,6 +118,7 @@ Rev A PCB carrier-board notes, including the MAX17048 fuel gauge, bq25185 boost
 - **Log format:** binary with sync bytes and CRC8. Magic number 0x474C494B ('KILG' as little-endian ASCII). See `docs/log_format.md` for the full spec and `firmware/src/log_format.h` for the C structs.
 - **Absolute time anchoring:** firmware writes a `KG_REC_TIME` record the first GPS PVT update with `getDateValid() && getTimeValid()`, then every 5 minutes for clock-drift detection. The first water test (session 37) had no TIME anchors because this feature came later; future sessions don't need GPS-speed cross-correlation to align with absolute time.
 - **Fix-state events:** firmware emits `KG_EVT_GPS_FIX_FOUND` / `KG_EVT_GPS_FIX_LOST` on transitions across the 3D fix threshold. Lets the parser quickly find the first and last 3D-fix moments without scanning every GPS record.
+- **Power-off watchdog (Wave 3 — documented, not yet implemented):** enable the ESP32 Task Watchdog (TWDT) with reset-on-timeout, and feed it only from the real sensor/work loop — never a timer or ISR (a stray feeder hides a hang). This is the hung-firmware safety for the discrete power latch: a hang reboots the chip, `ESP32_HOLD` drops, and (with the small `OFF_LATCH` cap) the unit powers off, so it cannot get stuck on inside the sealed case. Hardware interaction is documented under *Power Architecture → Power on/off* here and in the latch section of `docs/carrier_board_rev_a.md`. Tabled until Wave-3 power bring-up.
 
 ---
 
