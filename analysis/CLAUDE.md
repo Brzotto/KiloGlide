@@ -60,9 +60,12 @@ instead of adding more one-off constants.
 - `glide_speed_test.py` - within-stroke speed and glide metrics.
 - `precatch_signature.py` - averaged pre-catch forward-acceleration signature.
 - `perg_plot.py` - PERG / PM5 per-stroke force curves; `--overlay` compares mean
-  whole-stroke curves across laps.
+  whole-stroke curves across laps; `--distance` overlays per-stroke
+  force-vs-distance work curves (area = work/stroke; reveals leg drive).
 - `connected_quick.py` - quick Connected % spot-check.
 - `stroke_rate_timeline.py` - whole-session cadence timeline.
+- `session_timeline.py` - whole-session multi-signal timeline (speed / cadence /
+  force / side + heel) with Garmin lap markers and `--tmin/--tmax` zoom.
 - `nk_speedcoach.py` - NK SpeedCoach CSV loader (`load_nk`).
 - `speedcoach_report.py` - SpeedCoach vs KG data-quality report + comparison plots.
 

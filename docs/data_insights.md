@@ -109,3 +109,28 @@ Two rules to hold against feature creep.
 **The post-session review is the actual product.** Real-time on the water is the hook. The session review is what makes a paddler open the app Tuesday morning. That's also where Josh lives — give him the artifacts that help him coach Ray remotely. The device is the sensor; the post-session view is the coach.
 
 This biases firmware effort: log everything at full rate, render the on-water UI from a small subset, do the heavy analysis offline. Storage is cheap; algorithms developed in Python against logged sessions iterate 100× faster than algorithms developed against the live device.
+
+---
+
+## Stroke detection: multi-axis fusion (future work)
+
+*Validated on session 45 (2026-06-13); parked deliberately — the `gap_fill_strokes` flag already covers the common case.*
+
+**The gap.** KG detects strokes from forward-accel peaks. On long *steady cruise* pieces it drops the softest real strokes (the boat barely surges on them), so KG's stroke *count* runs ~5–15% under the NK SpeedCoach even when the *cadence* matches exactly — cadence is `60/median(interstroke interval)`, which is robust to scattered misses, so only the count moves. The opt-in `gap_fill_strokes` flag recovers most of these by trusting the rock-solid median cadence and inserting a stroke wherever the rhythm predicts one *and* a real sub-threshold bump actually sits there; it lifted session-45 real-piece agreement from 91% to 96%.
+
+**Why a single axis won't fully close it** (session 45, laps 2/10/13, vs SpeedCoach). "Rhythm clarity" = autocorrelation at the stroke period (1.0 = perfectly metronomic, 0 = no repeating beat; threshold-free, so it measures signal quality not amplitude):
+
+| Axis | count vs SpeedCoach | rhythm clarity | note |
+|---|---|---|---|
+| forward (surge) | under-counts (~38 vs 40–42 spm) | **0.84 — cleanest** | the reliable rhythm axis, but soft strokes fall under the amplitude bar |
+| pitch (ω_y) | reaches/exceeds SC (L2: exactly 374) | 0.19–0.41 — noisy | carries the soft strokes but isn't cleanly periodic |
+| roll (ω_x) | over-counts (~52–56 spm) | 0.56–0.73 | catches softs, plus extra structure |
+| heave (a_z) | ~doubles (locks to ~88 spm) | 0.40–0.68 | **two bobs per stroke** — not 1:1 |
+
+The soft strokes KG misses *are* in the data — they leave a real pitch/roll disturbance — but no single alternate axis is a clean swap: heave double-counts, pitch/roll are noisy. It's an algorithm limit, not a sensing one.
+
+**The upgrade.** A fusion / matched-filter detector: use forward accel for the clean cadence, then *confirm* a soft stroke when pitch and/or roll agree at the rhythm-predicted phase. A naive axis-sum does not work (it inherits heave's doubling and roll's noise → over-counts). This is almost certainly what the NK SpeedCoach does natively — it's boat-mounted too (no arm sensing), so its better soft-stroke count must come from a multi-axis and/or phase-locked algorithm, not a different sensor.
+
+**Surf caveat (any boat-motion detector, NK or KG).** Stroke detection keys on ~0.5–3 Hz hull motion; wind chop and the pitch/heave of riding swell land in that same band, so detection degrades in surf — forward's 0.84 rhythm clarity in glass erodes once waves inject stroke-frequency motion. The physical discriminator is the **catch**: a stroke is a sharp, brief *jerk* (high da/dt) while swell is smooth and low-jerk. A surf-robust detector should key on catch-sharpness and/or phase-lock to the established cadence. `gap_fill_strokes` is a glass-water tool — its cadence prior is itself corrupted in chop, so do not lean on it there.
+
+**Status:** not worth building for the last ~4% (the softest strokes) until there is a reason — a push to match the SpeedCoach exactly, or surf/downwind work where robust detection matters more. The table above is the starting point.
