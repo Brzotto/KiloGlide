@@ -43,6 +43,7 @@ class SessionConfig:
     compare_laps: list  # [{idx, label, color}, ...] for cross-lap comparison plots
     exclude_laps: list  # lap indices to drop from summaries (rests, anomalies)
     adaptive_strokes: bool  # gate-adaptive weak-stroke detection (off = legacy fixed threshold)
+    gap_fill_strokes: bool  # cadence-guided recovery of soft real strokes (off = legacy)
 
 
 def _load_manifest():
@@ -94,6 +95,7 @@ def get_session(session_id=None) -> SessionConfig:
         compare_laps=s.get("compare_laps", []),
         exclude_laps=s.get("exclude_laps", []),
         adaptive_strokes=bool(s.get("adaptive_strokes", False)),
+        gap_fill_strokes=bool(s.get("gap_fill_strokes", False)),
     )
 
 

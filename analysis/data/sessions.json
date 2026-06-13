@@ -1,6 +1,29 @@
 {
   "default_session": 37,
   "sessions": {
+    "45": {
+      "date": "2026-06-13",
+      "kg_file": "kg_000045.bin",
+      "garmin_fit": "23237749088_ACTIVITY.fit",
+      "garmin_tcx": null,
+      "nk_speedcoach": "SpdCoach 2669512 20260613 0852AM.csv",
+      "location": "Alameda Bay, CA",
+      "boat": "OC1",
+      "paddle": "OC paddle",
+      "system_mass_kg": 85,
+      "mount": "breadboard forward of seat (same as sessions 37/42)",
+      "conditions": "glassy, no waves, strong tidal current, some wind",
+      "notes": "Third on-water test, OC paddle. Forgot SESSION_END but data is clean (0 CRC errors, 0 resync bytes, 0 ts underflows; duration taken from IMU timestamps). 17 TIME records -> time-record alignment. KG ran 82.7 min; Garmin/SpeedCoach cover 53.8 min and started ~893 s (14.9 min) into the KG log (paddled out with KG running). SpeedCoach was in 'Just Go' mode = ONE interval (1919 strokes, avg 41 spm): gives per-stroke ground truth but NO interval/lap structure; lap structure comes from 15 Garmin manual lap presses. Lap roles confirmed from data: L1 = 1-min drift calibration (0 strokes, dead-still); L2 = ~9-min steady warmup at pace (no build-up); L3 and L4 = the two sprint BUILD-UPS (force 33->55 / 31->44 lbs, cadence ~37->55 spm, speed ramps to 6.5 mph within the piece); L5-L9 = short pieces; L6/L11 = near-rest transitions; L10 (14 min) and L13 (10 min) = long steady distance pieces; L15 = flying-the-ama balance drill (near-stationary 10 m, 22 light SpeedCoach strokes, heel held ~+1.9 deg off float baseline, roll-rate RMS 0.25 rad/s = 2.4x cruise). SpeedCoach cross-check: KG-vs-SC instantaneous speed r=0.954, per-lap mean speed median |diff| 0.04 mph, KG counted 1751/1919 strokes (91%). LEG-DRIVE A/B confirmed by paddler durations (no-leg pieces shorter ~50 s, leg pieces longer); paddler did RIGHT side first this session: L6 = RIGHT no-leg (46 s), L7 = RIGHT leg (66 s), L8 = LEFT no-leg (51 s), L9 = LEFT leg (58 s). The leg-drive signal is NOT in raw peak force, impulse, connection%, or yaw-side-bias (~50% on every lap), but IS clear in WORK PER STROKE from the force-vs-distance curve (area under drive force vs boat travel): RIGHT 71->125 J (+76%, via a fuller/longer arch = textbook sustained leg connection), LEFT 94->147 J (+56%, via a higher peak ~33->50 lbf = hit harder rather than longer). Within-pair contrast is clean because the pair laps are adjacent in time/conditions; absolute J is boat-response, not blade force. Blind whole-lap scans wash this out by mixing sides/efforts. L12 was a light-paddling experiment (barely moving, sometimes just dipping the blade) to watch how the SpeedCoach detects strokes -- NOT a real piece, so it is excluded. gap_fill_strokes=true recovers soft real strokes the amplitude detector drops on moving cruise pieces (cadence-guided; no effect on rests/drills).",
+      "compare_laps": [
+        {"idx": 3, "label": "L3 sprint build-up #1", "color": "firebrick"},
+        {"idx": 4, "label": "L4 sprint build-up #2", "color": "darkorange"}
+      ],
+      "exclude_laps": [1, 11, 12, 15],
+      "left_laps": [8, 9],
+      "right_laps": [6, 7],
+      "adaptive_strokes": true,
+      "gap_fill_strokes": true
+    },
     "42": {
       "date": "2026-06-04",
       "kg_file": "kg_000042.bin",

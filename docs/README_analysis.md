@@ -2,6 +2,34 @@
 
 Quick reference for processing the data after each on-water session.
 
+## Fast path — which question, which command (read this first)
+
+The pipeline is session-aware, so you rarely need to re-explore. Add the session
+to the manifest (Step 2), then map the question straight to a tool. This table is
+the point: don't re-derive which metric answers what — look here.
+
+| Question | Command / metric | Notes |
+|---|---|---|
+| Is the log OK? (corruption, duration) | `python tools/kg_parse.py analysis/data/kg_000NNN.bin` | Clean = 0 CRC / 0 resync / 0 underflow. A missing `SESSION_END` is harmless — duration falls back to IMU timestamps. |
+| What happened when? (structure, build-ups) | `python analysis/session_timeline.py --session N` (`--tmin/--tmax` to zoom) | Speed / cadence / force / side+heel on one time axis with Garmin lap markers; near-stationary laps shaded. Build-ups show as ramps. |
+| Sprint build-up inside a piece | session_timeline zoom, or within-lap 1st-third vs last-third of force/cadence/speed | A real build-up ramps all three *within* the lap; a flat piece is a warmup/cruise. |
+| Coach one-pager | `python analysis/coach_summary.py --session N` | mph / lbs units. |
+| Leg drive (vs not) | `python analysis/perg_plot.py --session N --distance L6,L7,L8,L9` | WORK PER STROKE = area under force-vs-distance. NOT visible in peak force / impulse / connection / side-bias. Compare MATCHED pairs (same side, adjacent in time); blind whole-lap scans wash it out. |
+| Flying the ama / balance | heel angle (atan2 of low-passed lateral vs up accel) + roll-rate RMS per lap | Ama-flying = sustained heel off the floating baseline + roll-rate RMS ~2-3x cruise, usually near-stationary. Track: higher heel held at *lower* roll-RMS = steadier. |
+| Which side (L / R)? | lap yaw envelope (`left_time_fraction`) | KNOWN-LIMITED: reads ~50% in glassy cruise water; per-stroke L/R is noise-dominated. Don't trust it to auto-pair sides — get the side order from the paddler. |
+| Speed + cadence match vs SpeedCoach | `python analysis/speedcoach_report.py --session N` | The DATA QUALITY block is the standard per-session report (see below): speed `r`, per-lap mean-speed agreement (mph), per-lap cadence agreement (spm), KG/SC stroke-count %. SpeedCoach (boat-mounted) is the right reference; the Garmin *watch* over-counts strokes. |
+
+Efficiency notes:
+- The KG log is large (~40 MB, ~2M IMU samples); every script reloads + re-aligns +
+  re-detects axes (~15-20 s each). Don't loop scripts needlessly.
+- Alignment is automatic: TIME records (firmware >= 2026-05-23) give exact
+  alignment; cross-correlation is the fallback and also the validation `r`.
+- Record confirmed lap roles in the manifest `notes` so the next session (or agent)
+  doesn't re-derive the structure. Save the Garmin + SpeedCoach files into
+  `analysis/data/` — they're gitignored as user data (only `sessions.json` is
+  tracked), but the manifest + scripts that reference them are committed, so the
+  analysis stays reproducible whenever you have the files.
+
 ## What you have after a session
 
 After paddling, you'll have:
@@ -45,6 +73,7 @@ Edit `analysis/data/sessions.json`. Append a new session under `"sessions"`:
   "compare_laps": [],
   "exclude_laps": [],
   "adaptive_strokes": false,
+  "gap_fill_strokes": false,
   "summary_narrative": []
 }
 ```
@@ -63,6 +92,23 @@ adaptively to the signal's own amplitude **while the boat is moving** (GPS-speed
 gated, so drifting rests still read zero). It only ever lowers the bar on weak
 pieces; normal/strong laps are unchanged. Leave it `false` to reproduce the
 legacy fixed-threshold counts (e.g. the session-37 reference).
+
+`gap_fill_strokes` (default `false`) fixes a different miss: on long steady
+cruise pieces the detector drops the *softest* real strokes, so KG's count runs
+a few % under the SpeedCoach even when the cadence matches exactly (cadence is
+median-based, so scattered misses don't move it — only the count). With the flag
+on, KG uses its rock-solid median stroke period as a prior and recovers a dropped
+stroke wherever the rhythm predicts one **and** a real sub-threshold bump
+actually sits there. So it adds genuine soft strokes but never invents them on
+rests/drills — it's speed-gated and needs an established cadence to extrapolate
+from (a balance drill with no rhythm gets nothing). On session 45 it lifted
+real-piece stroke agreement with the SpeedCoach from 91% to 96%. The residual
+~4% are soft strokes that leave little *forward-accel* bump but still disturb the
+hull on other axes (pitch/heave); NK's boat accelerometer catches them, KG's
+forward-accel peak detector doesn't *yet* — an algorithm limit, not a sensing one
+(both are hull-motion sensors; only the wrist Garmin senses arm motion). Like
+`adaptive_strokes`, it only
+ever adds strokes on moving pieces; leave it `false` for the session-37 reference.
 
 Optionally update `"default_session"` to the new number so scripts default to it.
 
@@ -120,11 +166,21 @@ Workflow:
 python analysis/speedcoach_report.py --session 38
 ```
 
-It prints a data-quality check (KG-vs-SpeedCoach speed correlation, total-stroke
-agreement, verdict) and a per-lap table (strokes / speed / stroke-rate /
-distance-per-stroke, SpeedCoach vs KG), and saves three plots to
-`analysis/plots/session_N/`: `40_speed_vs_time.png`,
-`41_strokerate_vs_time.png`, `42_per_lap_bars.png`. The report aligns the
+It prints a DATA QUALITY block — **the standard per-session match to report** —
+plus a per-lap table (strokes / speed / stroke-rate / distance-per-stroke,
+SpeedCoach vs KG), and saves three plots to `analysis/plots/session_N/`:
+`40_speed_vs_time.png`, `41_strokerate_vs_time.png`, `42_per_lap_bars.png`.
+
+Report these four numbers each session (the DATA QUALITY block prints them all):
+
+| Metric | What it is | Good |
+|---|---|---|
+| Speed correlation `r` | instantaneous KG-vs-SpeedCoach speed | > 0.9 |
+| Per-lap mean-speed agreement | median \|KG − SC\| over real pieces (mph) | < 0.3 mph |
+| Per-lap cadence agreement | median \|KG − SC\| stroke rate over real pieces (spm) | < 2 spm |
+| Stroke-count ratio | KG total strokes / SpeedCoach total | 90–110% |
+
+(Session 45 hit r = 0.954, 0.04 mph, 0.3 spm, 91% — verdict GOOD.) The report aligns the
 SpeedCoach to KG (the two devices are usually started a few seconds apart) and
 trims the acceleration ramp before averaging, so per-lap mean speeds are
 comparable — KG agrees with the SpeedCoach to within hundredths of an mph on
@@ -176,6 +232,8 @@ conditions:
 | **Connected %** | Fraction of strokes with clean catch-to-drive | Higher |
 | **Pull duration (s)** | Time blade is in water per stroke | Stable across cadences (good) |
 | **Glide duration (s)** | Time blade is out, between strokes | Shrinks at high cadence (normal) |
+| **Work per stroke (J)** | Area under force-vs-distance (`perg_plot --distance`). Energy into the boat per stroke; reveals leg drive. | Larger; a fuller/longer arch = sustained drive (compare matched pairs) |
+| **Ama heel + roll-RMS** | Sustained heel off the floating baseline + roll-rate RMS. Balance skill while flying the ama. | Higher heel held at *lower* roll-RMS = steadier |
 
 These are GPS-dependent (current-contaminated), useful but harder to compare:
 

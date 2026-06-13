@@ -778,9 +778,48 @@ def _bandpass(y, fs, lo=0.5, hi=3.0, order=2):
     return sosfiltfilt(sos, y)
 
 
+def _gap_fill_peaks(signal, peaks, min_sep, floor_frac=0.35, max_k=3):
+    """Recover soft real strokes the amplitude detector dropped, using the
+    established cadence as a prior.
+
+    The median inter-peak spacing is the most reliable thing KG measures, so we
+    trust it: for each gap that is ~k x the median period (k = 2..max_k), look
+    near each rhythm-predicted catch for a local maximum that clears a LOWERED
+    floor (floor_frac of the detected peaks' median height). A stroke is added
+    only where such a bump actually exists, so genuine glides/pauses (no bump)
+    and drills with no steady rhythm are left untouched — the fill is
+    self-gating. `signal` is the same (band-passed) trace find_peaks ran on;
+    `peaks` and `min_sep` are in samples.
+    """
+    peaks = sorted(int(p) for p in peaks)
+    diffs = np.diff(peaks)
+    period = float(np.median(diffs)) if len(diffs) else 0.0
+    if period <= 0:
+        return peaks
+    floor = floor_frac * float(np.median(signal[peaks]))
+    half = max(1, int(0.30 * period))
+    out = list(peaks)
+    for a, b in zip(peaks[:-1], peaks[1:]):
+        gap = b - a
+        k = int(round(gap / period))
+        if k < 2 or k > max_k:
+            continue
+        for j in range(1, k):
+            center = a + int(round(j * gap / k))
+            lo = max(a + min_sep, center - half)
+            hi = min(b - min_sep, center + half)
+            if hi <= lo:
+                continue
+            idx = lo + int(np.argmax(signal[lo:hi]))
+            if signal[idx] >= floor:
+                out.append(idx)
+    return sorted(set(out))
+
+
 def detect_strokes(t, fwd_accel, prominence=1.0, height=0.5, refractory_s=0.4,
                    use_bandpass=True, adaptive=False, adaptive_k=1.3,
-                   adaptive_floor=0.7):
+                   adaptive_floor=0.7, gap_fill=False, gap_fill_floor_frac=0.35,
+                   gap_fill_max_k=3):
     """Peak detection on forward accel.
 
     Uses scipy.signal.find_peaks with both a prominence and an absolute height
@@ -827,6 +866,11 @@ def detect_strokes(t, fwd_accel, prominence=1.0, height=0.5, refractory_s=0.4,
     distance = max(1, int(refractory_s / dt))
     peaks, _ = find_peaks(signal, prominence=prominence, height=height,
                           distance=distance)
+    peaks = list(peaks)
+    if gap_fill and len(peaks) >= 5:
+        peaks = _gap_fill_peaks(signal, peaks, distance,
+                                floor_frac=gap_fill_floor_frac,
+                                max_k=gap_fill_max_k)
     return [(float(t[i]), int(i)) for i in peaks]
 
 
@@ -1105,7 +1149,8 @@ def _side_envelope_metrics(yaw, fs, edge_skip_s=5.0):
 
 def analyze_lap(kg, A_body, G_body, lap, align, mass_kg, prominence=1.5,
                 height=1.0, refractory_s=0.4, adaptive=False,
-                adaptive_gate_mps=1.1, adaptive_k=1.3, adaptive_floor=0.7):
+                adaptive_gate_mps=1.1, adaptive_k=1.3, adaptive_floor=0.7,
+                gap_fill=False):
     t0, t1 = lap_local_window(lap, align)
     t = kg["imu_t"]
     m = (t >= t0) & (t <= t1)
@@ -1127,10 +1172,15 @@ def analyze_lap(kg, A_body, G_body, lap, align, mass_kg, prominence=1.5,
     mean_speed = float(np.mean(gv[gm])) if np.any(gm) else float("nan")
     use_adaptive = bool(adaptive and np.isfinite(mean_speed)
                         and mean_speed >= adaptive_gate_mps)
+    # Gap-fill rides the same "boat is moving" gate as adaptive, so it never
+    # invents strokes on a drift/rest/ama drill (no steady cadence there anyway).
+    use_gap_fill = bool(gap_fill and np.isfinite(mean_speed)
+                        and mean_speed >= adaptive_gate_mps)
 
     strokes = detect_strokes(tt, fwd, prominence=prominence, height=height,
                               refractory_s=refractory_s, adaptive=use_adaptive,
-                              adaptive_k=adaptive_k, adaptive_floor=adaptive_floor)
+                              adaptive_k=adaptive_k, adaptive_floor=adaptive_floor,
+                              gap_fill=use_gap_fill)
     feats = stroke_features_for_window(tt, fwd, roll, strokes, mass_kg)
     if len(feats) < 2:
         return {"lap": lap, "feats": feats, "cadence_spm": 0.0, "n_strokes": len(feats)}

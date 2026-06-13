@@ -123,7 +123,8 @@ def main():
         # stroke counts: full window (robust to a few seconds of misalignment)
         sc_n = int(np.sum((sc_clk >= a) & (sc_clk < b)))
         r = analyze_lap(kg, A, G, lap, align, cfg.system_mass_kg,
-                        adaptive=cfg.adaptive_strokes)
+                        adaptive=cfg.adaptive_strokes,
+                        gap_fill=cfg.gap_fill_strokes)
         kg_n = r["n_strokes"] if r else 0
         kg_total += kg_n
         # mean speed / rate / DPS: trimmed + aligned, so KG and SC are comparable
@@ -145,14 +146,34 @@ def main():
           and np.isfinite(L["kg_spd"]) and np.isfinite(L["sc_spd"])]
     med_speed_err = float(np.median(sd)) if sd else float("nan")
 
+    # per-lap cadence (stroke-rate) agreement on the same real pieces — the
+    # second half of "did KG match the SpeedCoach". KG cadence is per-lap (median
+    # inter-stroke interval); SC is its trimmed mean stroke rate over the piece.
+    rd = [abs(L["kg_sr"] - L["sc_sr"]) for L in per_lap
+          if L["kg_n"] >= 20 and L["idx"] not in exclude
+          and np.isfinite(L["kg_sr"]) and np.isfinite(L["sc_sr"])]
+    med_sr_err = float(np.median(rd)) if rd else float("nan")
+
     print("=== DATA QUALITY ===")
     print(f"  Device start offset (SpeedCoach vs Garmin/KG): {shift:+.1f} s")
     print(f"  Instantaneous speed correlation KG vs SpeedCoach:  r = {r_speed:.3f}")
     print(f"  Per-lap MEAN speed agreement (trimmed): median |KG-SC| = "
           f"{med_speed_err:.2f} mph")
-    print(f"  Total strokes:  SpeedCoach {sc_total}   KG {kg_total}"
-          f"   ({100*kg_total/sc_total:.0f}% of SpeedCoach)")
-    verdict = ("GOOD" if (med_speed_err < 0.3 and 0.9 < kg_total/max(sc_total, 1) < 1.1)
+    print(f"  Per-lap cadence agreement (trimmed):    median |KG-SC| = "
+          f"{med_sr_err:.1f} spm")
+    # Real-piece stroke agreement: sum over non-excluded laps only, so rests /
+    # drills (which SpeedCoach counts but KG deliberately doesn't) don't drag the
+    # headline number. This is the count metric that reflects real paddling.
+    sc_real = sum(L["sc_n"] for L in per_lap if L["idx"] not in exclude)
+    kg_real = sum(L["kg_n"] for L in per_lap if L["idx"] not in exclude)
+    real_ratio = kg_real / max(sc_real, 1)
+    print(f"  Total strokes (whole session):  SpeedCoach {sc_total}   KG {kg_total}"
+          f"   ({100*kg_total/sc_total:.0f}%)")
+    print(f"  Real-piece strokes (excl rests/drills):  SpeedCoach {sc_real}"
+          f"   KG {kg_real}   ({100*real_ratio:.0f}%)")
+    verdict = ("GOOD" if (med_speed_err < 0.3
+                          and (np.isnan(med_sr_err) or med_sr_err < 2.0)
+                          and 0.9 < real_ratio < 1.1)
                else "CHECK")
     print(f"  Verdict: {verdict}\n")
 

@@ -360,6 +360,90 @@ def overlay_lap_means(kg, R, tcx, align, mass_kg, lap_list, savepath, title,
     return rows
 
 
+def overlay_force_vs_distance(kg, R, tcx, align, mass_kg, lap_list, savepath,
+                              x_max=2.4, adaptive=True):
+    """Per-stroke drive force vs BOAT DISTANCE from the catch, mean curve per lap.
+
+    Unlike the time/phase force curves above, this puts force on a physical
+    distance axis: within each stroke we reconstruct boat speed (integrate
+    forward accel, anchor the stroke mean to GPS speed), integrate again to
+    distance, and align every stroke at its catch. The AREA under the pull arch
+    is work per stroke. This is the view that reveals leg drive — a leg-driven
+    stroke is fuller/longer (force sustained over more travel) and/or does more
+    work — where peak force, impulse, connection%, and the yaw side-bias do not.
+
+    Compare MATCHED pairs (same side, adjacent in time, same conditions); a blind
+    whole-session lap scan washes the contrast out by mixing sides and efforts.
+    Returns a per-lap (idx, n_strokes, mean_work_J, mean_fullness) table.
+    """
+    A_body = rotate_accel(R, kg["accel_raw"])
+    G_body = rotate_gyro(R, kg["gyro_raw"])
+    t = kg["imu_t"]; fwd = A_body[:, 0]; roll = G_body[:, 0]
+    gt, gv = kg["gps_t"], kg["gps_speed"]
+    N_TO_LBF = 0.224809
+    laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
+    grid = np.linspace(0, x_max, 100)
+
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    colors = plt.cm.turbo(np.linspace(0.05, 0.95, max(1, len(lap_list))))
+    rows = []
+    for c, li in zip(colors, lap_list):
+        if li not in laps_by_idx:
+            continue
+        lap = laps_by_idx[li]
+        lt0, lt1 = lap_local_window(lap, align)
+        skip = 10.0 if lap["duration_s"] < 90 else 60.0
+        m = (t >= lt0 + skip) & (t <= lt1)
+        tt, aw, rr = t[m], fwd[m], roll[m]
+        gm = (gt >= lt0) & (gt <= lt1)
+        vmean = float(np.mean(gv[gm])) if np.any(gm) else 0.0
+        strokes = detect_strokes(tt, aw, prominence=1.5, height=1.0,
+                                 refractory_s=0.4,
+                                 adaptive=bool(adaptive and vmean >= 1.1))
+        feats = stroke_features_for_window(tt, aw, rr, strokes, mass_kg)
+        curves, works, fulls = [], [], []
+        for f in feats:
+            seg = f.get("fwd_segment"); ts = f.get("time_segment")
+            if seg is None or len(seg) < 12:
+                continue
+            dt = float(np.median(np.diff(ts)))
+            a = seg.astype(float)
+            v = np.clip(vmean + np.cumsum(a - a.mean()) * dt, 0.05, None)
+            F = a * mass_kg
+            d = np.cumsum(v) * dt
+            pk = int(np.argmax(F)); cc = pk
+            while cc > 0 and F[cc] > 0:
+                cc -= 1
+            pos = F > 0
+            dpos = float(np.sum(v[pos]) * dt)
+            work = float(np.sum(F[pos] * v[pos]) * dt)
+            peak = float(F.max())
+            if peak <= 0 or dpos <= 0:
+                continue
+            works.append(work); fulls.append(work / (peak * dpos))
+            curves.append(np.interp(grid, d - d[cc], F * N_TO_LBF,
+                                    left=np.nan, right=np.nan))
+        if not curves:
+            continue
+        mean_c = np.nanmean(np.array(curves), axis=0)
+        ax.plot(grid, mean_c, color=c, linewidth=2.2,
+                label=f"L{li} {lap['duration_s']:.0f}s  "
+                      f"work {np.mean(works):.0f} J  full {np.mean(fulls):.2f}")
+        rows.append((li, len(works), float(np.mean(works)), float(np.mean(fulls))))
+
+    ax.axhline(0, color="gray", linewidth=0.7, linestyle="--")
+    ax.set_xlabel("boat distance from the catch (m)")
+    ax.set_ylabel("drive force on boat (lbf)   (+ pull,  - glide)")
+    ax.set_title("Per-stroke force vs distance - area under the arch = work per stroke\n"
+                 "fuller/longer arch or more work = leg drive (compare MATCHED pairs)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9)
+    fig.tight_layout()
+    fig.savefig(savepath, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    return rows
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     add_session_arg(p)
@@ -369,6 +453,11 @@ def main():
                    help="Comma-separated lap indices: overlay their mean "
                         "whole-stroke curves (pull + recovery) on one axis "
                         "instead of the per-stroke plots.")
+    p.add_argument("--distance", type=str, default=None,
+                   help="Comma-separated lap indices: overlay per-stroke "
+                        "force-vs-DISTANCE work curves (area = work/stroke). "
+                        "The view that reveals leg drive; compare matched pairs "
+                        "(same side, adjacent in time).")
     p.add_argument("--label", type=str, default="compare",
                    help="Filename label for --overlay output (default 'compare')")
     p.add_argument("--skip-start", type=float, default=None,
@@ -386,6 +475,21 @@ def main():
     align = align_kg_to_garmin(kg, tcx)
     R, _ = detect_imu_axes(kg)
     out = cfg.plots_dir
+
+    # --- distance mode: per-stroke force-vs-distance work curves -------------
+    if args.distance:
+        lap_list = [int(x) for x in args.distance.split(",") if x.strip()]
+        savepath = os.path.join(out, f"22_force_vs_distance_{args.label}.png")
+        rows = overlay_force_vs_distance(kg, R, tcx, align, mass_kg, lap_list,
+                                         savepath)
+        print(f"Saved force-vs-distance overlay to {savepath}\n")
+        print("lap  nstr  work(J)  fullness")
+        for li, n, w, fu in rows:
+            print(f"{li:3d}  {n:4d}  {w:7.0f}   {fu:.3f}")
+        print("\nWork = area under the pull arch (energy into the boat per "
+              "stroke). Fuller arch / more work on the leg piece of a matched "
+              "pair = leg drive. Compare adjacent same-side pieces only.")
+        return
 
     # --- overlay mode: compare mean whole-stroke curves across laps ----------
     if args.overlay:
