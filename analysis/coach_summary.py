@@ -54,7 +54,8 @@ def main():
         if li in exclude_laps:
             continue
         r = analyze_lap(kg, A_body, G_body, laps_by_idx[li], align,
-                        cfg.system_mass_kg, adaptive=cfg.adaptive_strokes)
+                        cfg.system_mass_kg, adaptive=cfg.adaptive_strokes,
+                        gap_fill=cfg.gap_fill_strokes)
         if r is None or r["n_strokes"] < 10:
             continue
         per_lap[li] = r
