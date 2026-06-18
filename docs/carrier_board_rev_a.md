@@ -92,6 +92,14 @@ External parts and layout notes:
 | CTG | Tie to GND | Datasheet-required connection |
 | Exposed pad | GND | Use vias/stitching if the footprint provides a pad |
 
+Powering `VDD` from the cell while SDA/SCL pull up to switched 3.3 V is in spec
+and intended. The MAX17048 SDA/SCL/ALRT pins are rated −0.3 V to +6 V
+*independent of VDD*, so the 3.3 V bus may sit above VDD near end-of-charge
+without an abs-max violation, and the input logic-high threshold (~0.7 × VDD ≈
+2.94 V at a 4.2 V cell) is still met. Keep `VDD` on the cell so the gauge tracks
+state-of-charge continuously through power-off — do **not** move `VDD` to
+switched 3.3 V, which would reset the gauge model on every power cycle.
+
 ## Optional battery temperature sense (DNP, for fuel-gauge temp-comp)
 
 The MAX17048 has no temperature sensor; its `RCOMP` temperature compensation is a
@@ -200,6 +208,14 @@ Pins 1 and 2 may swap because both are diode anodes. Pin 3 must connect to
 `BUTTON_RAW`. If reusing a schematic symbol from another package, verify the
 symbol pin numbers against the selected SOT-23 footprint before ordering.
 
+Apply the same caution to the `BSS138DW` dual NMOS (M1 pulls boost `EN` low, M2
+pulls `OFF_LATCH` low). The SOT-363 dual-NMOS pin numbering is not consistent
+across datasheets and library symbols — the Diodes DS30203 datasheet shows only
+a die map (`D2 G1 S1 / S2 G2 D1`), not a numbered table. Confirm against the
+footprint that the **control net lands on the gate pad and GND on the source
+pad** (drain to the switched net) rather than trusting symbol pin numbers; a
+gate/source swap would leave the FET permanently off and the latch dead.
+
 Add a 100 nF capacitor from `ESP32_BUTTON` to GND near the ESP32/button-sense
 input. This filters a few-inch waterproof button lead while firmware still does
 normal debounce and long-press timing.
@@ -272,6 +288,16 @@ Recommended connector signals:
 | CS | Suggested GPIO 16 |
 | DISP | Optional display enable/control or spare |
 | EXTCOMIN / EMD | Optional spare/test pad for external VCOM refresh |
+
+This panel's `CS` is **active-high** (driven high to select), and SPI2 is shared
+with the IMU. `DISP_CS` (GPIO 16) floats during the reset/boot window before
+firmware runs; if it floats high while the IMU is clocked, the panel latches that
+traffic as garbage pixels. Add a **100 kΩ pulldown on `DISP_CS`, DNP by default**,
+and drive GPIO 16 low early in firmware — populate the pulldown only if bring-up
+shows boot-time corruption. Any series part on the CS net (e.g. `R13`) must not
+pull the line toward 3.3 V, which would hold the panel permanently selected.
+Leave the `DISP` pin at direct-connect/NC: the Adafruit 4694 breakout drives it
+high onboard, so a pulldown there would blank the panel.
 
 The screen can be rotated in software with the Adafruit GFX `setRotation()`
 API. Mounting the breakout 180 degrees is electrically fine, but the physical
