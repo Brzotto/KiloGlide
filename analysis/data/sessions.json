@@ -1,6 +1,26 @@
 {
   "default_session": 37,
   "sessions": {
+    "46": {
+      "date": "2026-06-17",
+      "kg_file": "kg_000046.bin",
+      "garmin_fit": null,
+      "garmin_tcx": null,
+      "nk_speedcoach": null,
+      "location": "Alameda, CA (Oakland Estuary)",
+      "boat": "OC1 (Ares, Austin's guest paddle)",
+      "paddle": "dragon-boat paddle",
+      "system_mass_kg": 95,
+      "mount": "center, similar to owner's usual breadboard mount (guest boat)",
+      "conditions": "to confirm with paddler (wind/chop/current not yet recorded)",
+      "notes": "GUEST PADDLE: Austin (~180 lb / ~82 kg body; system ~95 kg w/ Ares + gear, estimate to confirm), dragon-boat blade, OC1 (Ares). Protocol per owner: easy warmup, then switched sides every 0.5 mi; a 1-mile pseudo time-trial = 0.5 mi / ~30 s break / 0.5 mi. KG-ONLY FIRST PASS -- Garmin export to be added later (folds in for exact alignment + lap-based per-piece force/glide/work; 21 TIME records present so alignment will be time_record-exact), no SpeedCoach this session. Data is pristine: 0 CRC / 0 resync / 0 ts-underflow, clean SESSION_END, 102.3 min, 2.51M IMU @409Hz, 30.7k GPS @5Hz mostly-3D (27 sats avg). Only 2 USER_MARKs (start ~2.4s, end ~6135s) so KG log carries NO internal lap/TT boundaries -- segment structure here is GPS-derived (Garmin laps will pin it exactly later). GPS-DERIVED STRUCTURE (KG-only, mass-independent): dock/setup 0-14 min (near-stationary, brief blip ~6 min); warmup ~14.8-30.9 min (1.36 mi @ 5.1 mph mean); ~1 min ease; standout 0.5-mi effort 32.4-37.0 min @ 6.6 mph mean / 9.0 mph peak; second 0.5-mi 37.4-42.5 min @ 5.6 mph -> together the ~1.0-mi pseudo-TT; long steady block 44.2-87.3 min (3.58 mi @ 5.0 mph, the side-switch-every-0.5-mi pieces); cooldown + dead stop 87-102 min. TO CONFIRM with paddler: exact side per piece (yaw envelope reads side but is noise-limited), water conditions, and whether the TT break was a full stop or an ease (GPS shows an ease, not a full stop).",
+      "compare_laps": [],
+      "exclude_laps": [],
+      "adaptive_strokes": true,
+      "gap_fill_strokes": true,
+      "left_laps": [],
+      "right_laps": []
+    },
     "45": {
       "date": "2026-06-13",
       "kg_file": "kg_000045.bin",
