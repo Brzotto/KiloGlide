@@ -426,7 +426,34 @@ def align_kg_to_garmin(kg, tcx, max_search_s=1500.0, dt_s=1.0):
 
     Always runs cross-correlation so the diagnostic plot and validation r are
     available regardless of alignment method.
+
+    If tcx is None (no Garmin export for this session yet), there is nothing to
+    align to: return a trivial alignment where KG-local time IS the timeline
+    (offset 0). Absolute UTC still comes from TIME records when present, so
+    wall-clock features keep working; the cross-correlation fields are empty.
     """
+    if tcx is None:
+        time_recs = kg.get("time_records", [])
+        kg_t0_utc = (time_recs[0]["unix_us"] / 1e6 - time_recs[0]["local_ms"] / 1e3
+                     if time_recs else None)
+        return {
+            "kg_t0_utc": kg_t0_utc,
+            "offset_s": 0.0,
+            "best_r": None,
+            "lags": np.array([]),
+            "scores": np.array([]),
+            "fallback_used": False,
+            "alignment_method": "none",
+            "xcorr_kg_t0_utc": None,
+            "kg_grid_local": None,
+            "kg_speed_u": None,
+            "garmin_grid_local": None,
+            "garmin_speed_u": None,
+            "garmin_t0_utc": None,
+            "kg_duration_s": float(kg["gps_t"].max()),
+            "garmin_duration_s": None,
+        }
+
     # Always compute cross-correlation (needed for diagnostic plot + validation)
     xcorr_t0, xcorr_offset, xcorr_r, xcorr_fallback, extras = \
         _xcorr_alignment(kg, tcx, max_search_s, dt_s)
@@ -1221,6 +1248,84 @@ def analyze_lap(kg, A_body, G_body, lap, align, mass_kg, prominence=1.5,
         out["median_block_s"] = side_metrics["median_block_s"]
         out["median_block_strokes"] = (side_metrics["median_block_s"] * (cadence / 60.0)
                                        if cadence > 0 else 0.0)
+    return out
+
+
+def force_vs_distance_curve(t, fwd, roll, gt, gv, mass_kg, t0, t1,
+                            x_max=2.4, n_grid=100, adaptive=True,
+                            skip_start_s=None, return_strokes=False):
+    """Mean per-stroke drive-force-vs-boat-distance curve over a KG-local time
+    window [t0, t1] (seconds).
+
+    Window-based twin of the per-lap loop that used to live inline in
+    perg_plot.overlay_force_vs_distance — factored out here so the SAME math
+    runs on any window (a Garmin lap, a GPS-detected piece, or a manual
+    time window) and can be compared across sessions/paddlers.
+
+    Within each stroke: integrate forward accel to boat speed (anchored to the
+    window's mean GPS speed), integrate again to distance, and align every
+    stroke at its catch. The AREA under the positive arch is work per stroke.
+
+    Inputs are the precomputed whole-session arrays (so callers rotate the IMU
+    once): t=imu time, fwd=forward accel, roll=roll-rate, gt/gv=GPS time/speed.
+
+    Returns a dict {grid, mean_curve_lbf, work_J, fullness, n_strokes,
+    mean_speed_m_s} or None if the window has no usable strokes. work_J and
+    fullness are means over the window's strokes; fullness = work/(peak *
+    forward-travel) is a 0..1 arch-shape number (mass cancels, so it is
+    directly comparable between paddlers)."""
+    N_TO_LBF = 0.224809
+    if skip_start_s is None:
+        skip_start_s = 10.0 if (t1 - t0) < 90 else 60.0
+    grid = np.linspace(0, x_max, n_grid)
+    m = (t >= t0 + skip_start_s) & (t <= t1)
+    tt, aw, rr = t[m], fwd[m], roll[m]
+    gm = (gt >= t0) & (gt <= t1)
+    vmean = float(np.mean(gv[gm])) if np.any(gm) else 0.0
+    strokes = detect_strokes(tt, aw, prominence=1.5, height=1.0,
+                             refractory_s=0.4,
+                             adaptive=bool(adaptive and vmean >= 1.1))
+    feats = stroke_features_for_window(tt, aw, rr, strokes, mass_kg)
+    curves, works, fulls = [], [], []
+    for f in feats:
+        seg = f.get("fwd_segment"); ts = f.get("time_segment")
+        if seg is None or len(seg) < 12:
+            continue
+        dt = float(np.median(np.diff(ts)))
+        a = seg.astype(float)
+        v = np.clip(vmean + np.cumsum(a - a.mean()) * dt, 0.05, None)
+        F = a * mass_kg
+        d = np.cumsum(v) * dt
+        pk = int(np.argmax(F)); cc = pk
+        while cc > 0 and F[cc] > 0:
+            cc -= 1
+        pos = F > 0
+        dpos = float(np.sum(v[pos]) * dt)
+        work = float(np.sum(F[pos] * v[pos]) * dt)
+        peak = float(F.max())
+        if peak <= 0 or dpos <= 0:
+            continue
+        works.append(work); fulls.append(work / (peak * dpos))
+        curves.append(np.interp(grid, d - d[cc], F * N_TO_LBF,
+                                left=np.nan, right=np.nan))
+    if not curves:
+        return None
+    curves_arr = np.array(curves)
+    out = {
+        "grid": grid,
+        "mean_curve_lbf": np.nanmean(curves_arr, axis=0),
+        "work_J": float(np.mean(works)),
+        "fullness": float(np.mean(fulls)),
+        "n_strokes": len(curves),
+        "mean_speed_m_s": vmean,
+    }
+    if return_strokes:
+        # Per-stroke arrays for spread/consistency views: each row is one
+        # stroke's force-vs-distance curve (lbf) on the common grid, NaN
+        # outside that stroke's own travel range.
+        out["stroke_curves_lbf"] = curves_arr
+        out["work_per_stroke_J"] = np.array(works)
+        out["fullness_per_stroke"] = np.array(fulls)
     return out
 
 

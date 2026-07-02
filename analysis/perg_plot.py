@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 from correlate_kg_garmin import (
     load_kg, load_garmin, align_kg_to_garmin, detect_imu_axes,
     rotate_accel, rotate_gyro, lap_local_window, detect_strokes,
-    stroke_features_for_window,
+    stroke_features_for_window, force_vs_distance_curve,
 )
 from session_config import get_session, add_session_arg
 
@@ -380,9 +380,7 @@ def overlay_force_vs_distance(kg, R, tcx, align, mass_kg, lap_list, savepath,
     G_body = rotate_gyro(R, kg["gyro_raw"])
     t = kg["imu_t"]; fwd = A_body[:, 0]; roll = G_body[:, 0]
     gt, gv = kg["gps_t"], kg["gps_speed"]
-    N_TO_LBF = 0.224809
     laps_by_idx = {lap["idx"]: lap for lap in tcx["laps"]}
-    grid = np.linspace(0, x_max, 100)
 
     fig, ax = plt.subplots(figsize=(11, 6.5))
     colors = plt.cm.turbo(np.linspace(0.05, 0.95, max(1, len(lap_list))))
@@ -392,44 +390,14 @@ def overlay_force_vs_distance(kg, R, tcx, align, mass_kg, lap_list, savepath,
             continue
         lap = laps_by_idx[li]
         lt0, lt1 = lap_local_window(lap, align)
-        skip = 10.0 if lap["duration_s"] < 90 else 60.0
-        m = (t >= lt0 + skip) & (t <= lt1)
-        tt, aw, rr = t[m], fwd[m], roll[m]
-        gm = (gt >= lt0) & (gt <= lt1)
-        vmean = float(np.mean(gv[gm])) if np.any(gm) else 0.0
-        strokes = detect_strokes(tt, aw, prominence=1.5, height=1.0,
-                                 refractory_s=0.4,
-                                 adaptive=bool(adaptive and vmean >= 1.1))
-        feats = stroke_features_for_window(tt, aw, rr, strokes, mass_kg)
-        curves, works, fulls = [], [], []
-        for f in feats:
-            seg = f.get("fwd_segment"); ts = f.get("time_segment")
-            if seg is None or len(seg) < 12:
-                continue
-            dt = float(np.median(np.diff(ts)))
-            a = seg.astype(float)
-            v = np.clip(vmean + np.cumsum(a - a.mean()) * dt, 0.05, None)
-            F = a * mass_kg
-            d = np.cumsum(v) * dt
-            pk = int(np.argmax(F)); cc = pk
-            while cc > 0 and F[cc] > 0:
-                cc -= 1
-            pos = F > 0
-            dpos = float(np.sum(v[pos]) * dt)
-            work = float(np.sum(F[pos] * v[pos]) * dt)
-            peak = float(F.max())
-            if peak <= 0 or dpos <= 0:
-                continue
-            works.append(work); fulls.append(work / (peak * dpos))
-            curves.append(np.interp(grid, d - d[cc], F * N_TO_LBF,
-                                    left=np.nan, right=np.nan))
-        if not curves:
+        res = force_vs_distance_curve(t, fwd, roll, gt, gv, mass_kg, lt0, lt1,
+                                      x_max=x_max, adaptive=adaptive)
+        if res is None:
             continue
-        mean_c = np.nanmean(np.array(curves), axis=0)
-        ax.plot(grid, mean_c, color=c, linewidth=2.2,
+        ax.plot(res["grid"], res["mean_curve_lbf"], color=c, linewidth=2.2,
                 label=f"L{li} {lap['duration_s']:.0f}s  "
-                      f"work {np.mean(works):.0f} J  full {np.mean(fulls):.2f}")
-        rows.append((li, len(works), float(np.mean(works)), float(np.mean(fulls))))
+                      f"work {res['work_J']:.0f} J  full {res['fullness']:.2f}")
+        rows.append((li, res["n_strokes"], res["work_J"], res["fullness"]))
 
     ax.axhline(0, color="gray", linewidth=0.7, linestyle="--")
     ax.set_xlabel("boat distance from the catch (m)")

@@ -93,7 +93,8 @@ def main(argv=None):
     print(f"Session {cfg.session_id} ({cfg.date}) — {cfg.location}")
 
     kg = load_kg(cfg.kg_path)
-    garmin = load_garmin(cfg.garmin_path)
+    # Garmin is optional: with no export yet, run KG-only (no lap markers).
+    garmin = load_garmin(cfg.garmin_path) if cfg.garmin_path else None
     align = align_kg_to_garmin(kg, garmin)
     R, _ = detect_imu_axes(kg)
     A = rotate_accel(R, kg["accel_raw"])
@@ -139,7 +140,7 @@ def main(argv=None):
     # text inflates the saved canvas under bbox_inches="tight".
     xlo = args.tmin if args.tmin is not None else tmin.min()
     xhi = args.tmax if args.tmax is not None else tmin.max()
-    laps = garmin["laps"]
+    laps = garmin["laps"] if garmin else []
     for lap in laps:
         lt0, lt1 = lap_local_window(lap, align)
         if lt1 / 60.0 < xlo or lt0 / 60.0 > xhi:
