@@ -134,5 +134,6 @@ Firmware: use Arduino framework conventions.
 - docs/on_water_testing_checklist.md — reusable pre/in/post-session checklist for clean data capture
 - docs/connection_test_protocol.md — on-water A/B protocol for the connection-usefulness test
 - docs/handoff_2026-06-03_connection.md — handoff for the connection-usefulness phase
+- docs/handoff_2026-07-02.md — reference point through session 46 (state, open threads, cross-session learnings)
 - analysis/session_37_report.md — first water-test report
 - analysis/session_37_status_and_next_session.md — what's working and what's needed next
